@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "452109269173",
+    "project_id": "blood-donation-hci",
+    "storage_bucket": "blood-donation-hci.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:452109269173:android:e8084ca74d5bd55f5ca6fc",
+        "android_client_info": {
+          "package_name": "com.example.hci"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGfLi7G01KqZrxIvLGxtHD6BZsBlO82XE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
