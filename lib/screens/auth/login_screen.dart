@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'register_screen.dart';
 
 /// Login screen for the Blood Donation HCI application.
 /// Provides user interface and form validation connected to Firebase Authentication.
@@ -128,10 +129,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _handleNavigateToRegister() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Registration will be available in the next step.'),
-        behavior: SnackBarBehavior.floating,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const RegisterScreen(),
       ),
     );
   }
