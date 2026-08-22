@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Register screen for the Blood Donation HCI application.
 /// Provides user registration with role selection and Firebase Authentication.
@@ -99,18 +100,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    final fullName = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final role = _selectedRole!;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
+
+      final user = userCredential.user;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'fullName': fullName,
+          'email': email,
+          'role': role,
+          'phoneNumber': '',
+          'isActive': true,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       if (!mounted) return;
 
@@ -131,6 +146,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
+          backgroundColor: const Color(0xFFD32F2F),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on FirebaseException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message ?? 'A database error occurred. Please try again.'),
           backgroundColor: const Color(0xFFD32F2F),
           behavior: SnackBarBehavior.floating,
         ),
@@ -611,8 +636,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 20),
 
                     // Already have an account? Sign In
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         const Text(
                           'Already have an account?',
