@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'screens/auth/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,11 +23,11 @@ class MyApp extends StatelessWidget {
       title: 'Blood Donation HCI',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.red,
+          seedColor: const Color(0xFFC62828),
         ),
         useMaterial3: true,
       ),
-      home: const MyHomePage(),
+      home: const AuthGate(),
     );
   }
 }
