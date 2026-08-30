@@ -47,6 +47,19 @@ class _HistoryTabState extends State<HistoryTab> {
 
   static const _groups = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
 
+  // #pagination - History has no cap on how far back it can go, and
+  // rendering every matching request at once gets slow once a
+  // hospital has months of closed requests. Firestore itself isn't
+  // paginated server-side here (the query already avoids a composite
+  // index by sorting client-side - see the StreamBuilder below), so
+  // this is a simple client-side "show more" page: only the first
+  // _visibleCount of the already-filtered/sorted list are rendered,
+  // with a button to reveal the next page. Summary stats and CSV/PDF
+  // export still operate on the FULL filtered list, never the
+  // truncated one, so exported data is always complete.
+  static const _pageSize = 20;
+  int _visibleCount = _pageSize;
+
   @override
   void initState() {
     super.initState();
@@ -287,6 +300,9 @@ class _HistoryTabState extends State<HistoryTab> {
                 }).toList();
               }
 
+              final visibleRequests = requests.take(_visibleCount).toList();
+              final hasMore = requests.length > visibleRequests.length;
+
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -296,12 +312,26 @@ class _HistoryTabState extends State<HistoryTab> {
                         ? const EmptyState(icon: Icons.folder_off_outlined, title: 'No matching requests', message: 'Try adjusting your search or filters.')
                         : ListView.separated(
                             padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                            itemCount: requests.length,
+                            itemCount: visibleRequests.length + (hasMore ? 1 : 0),
                             separatorBuilder: (_, _) => const SizedBox(height: 10),
-                            itemBuilder: (context, index) => EntranceFadeSlide(
-                              delay: Duration(milliseconds: 30 * index.clamp(0, 10)),
-                              child: _HistoryRequestCard(request: requests[index]),
-                            ),
+                            itemBuilder: (context, index) {
+                              if (index == visibleRequests.length) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  child: Center(
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => setState(() => _visibleCount += _pageSize),
+                                      icon: const Icon(Icons.expand_more_rounded, size: 18),
+                                      label: Text('Load more (${requests.length - visibleRequests.length} remaining)'),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return EntranceFadeSlide(
+                                delay: Duration(milliseconds: 30 * index.clamp(0, 10)),
+                                child: _HistoryRequestCard(request: visibleRequests[index]),
+                              );
+                            },
                           ),
                   ),
                 ],
