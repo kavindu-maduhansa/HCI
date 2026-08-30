@@ -7,6 +7,7 @@ import '../theme/app_colors.dart';
 import '../screens/hospital/request_details_screen.dart';
 import '../screens/hospital/alert_center_screen.dart';
 import '../widgets/appearance_selector_sheet.dart';
+import '../screens/hospital/pdf_report.dart';
 
 /// #command-palette (Phase 2) - a desktop-grade "jump to anything"
 /// command palette (Ctrl+K / Cmd+K), the kind of interaction power
@@ -88,6 +89,15 @@ class _CommandPaletteDialogState extends State<_CommandPaletteDialog> {
       _PaletteEntry(title: 'Go to Donor Search', subtitle: 'Search & match donors', icon: Icons.search_rounded, onSelect: () => go(2)),
       _PaletteEntry(title: 'Go to History', subtitle: 'Past requests & filters', icon: Icons.history_rounded, onSelect: () => go(3)),
       _PaletteEntry(title: 'Generate Report', subtitle: 'Export a request as PDF from History', icon: Icons.picture_as_pdf_outlined, onSelect: () => go(3)),
+      _PaletteEntry(
+        title: 'Shift Handover Report',
+        subtitle: 'PDF snapshot of active requests, for the next shift',
+        icon: Icons.assignment_turned_in_outlined,
+        onSelect: () {
+          Navigator.pop(context);
+          showShiftHandoverDialog(context);
+        },
+      ),
       _PaletteEntry(
         title: 'Open Alerts',
         subtitle: 'Critical / verification / donor response alerts',

@@ -9,6 +9,7 @@ import 'tabs/donor_search_tab.dart';
 import 'tabs/history_tab.dart';
 import 'alert_center_screen.dart';
 import 'request_details_screen.dart';
+import 'pdf_report.dart';
 import '../../services/alert_watcher.dart';
 import '../../services/presence_service.dart';
 import '../../theme/app_colors.dart';
@@ -126,6 +127,11 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
             onPressed: () => showCommandPalette(context, onNavigateTab: (i) => setState(() => _tabIndex = i)),
           ),
           const AlertBellIcon(),
+          IconButton(
+            tooltip: 'Shift Handover Report',
+            icon: const Icon(Icons.assignment_turned_in_outlined),
+            onPressed: () => showShiftHandoverDialog(context),
+          ),
           IconButton(
             tooltip: 'Appearance',
             icon: const Icon(Icons.palette_outlined),
