@@ -293,7 +293,10 @@ class _CriticalEscalationBannerState extends State<_CriticalEscalationBanner> {
                   color: colors.critical.withValues(alpha: 0.12),
                   child: Column(
                     children: [
-                      InkWell(
+                      Semantics(
+                        button: true,
+                        label: '$criticalCount request${criticalCount == 1 ? '' : 's'} need immediate attention. ${_expanded ? 'Expanded' : 'Collapsed'}, double tap to ${_expanded ? 'hide' : 'show'} the list.',
+                        child: InkWell(
                         onTap: () => setState(() => _expanded = !_expanded),
                         child: Container(
                           width: double.infinity,
@@ -323,6 +326,7 @@ class _CriticalEscalationBannerState extends State<_CriticalEscalationBanner> {
                               ),
                             ],
                           ),
+                        ),
                         ),
                       ),
                       AnimatedSize(

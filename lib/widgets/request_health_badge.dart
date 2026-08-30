@@ -46,21 +46,30 @@ class RequestHealthBadge extends StatelessWidget {
         // #9 - tappable so the level is never just a color: it always
         // explains itself in plain language ("WHY"), clearly labelled
         // as an operational SLA indicator, never a medical claim.
-        InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => _showWhy(context, colors, level, color),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(_iconFor(level), size: 11, color: color),
-                const SizedBox(width: 3),
-                Text(RequestHealth.label(level), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: color)),
-                const SizedBox(width: 2),
-                Icon(Icons.info_outline_rounded, size: 10, color: color.withValues(alpha: 0.7)),
-              ],
+        // #accessibility - Semantics(button:true) so a screen reader
+        // announces this as an actionable element with its own label,
+        // not just a colored chip of icon+text+icon fragments.
+        Semantics(
+          button: true,
+          label: '${RequestHealth.label(level)}. Double tap to see why.',
+          child: ExcludeSemantics(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => _showWhy(context, colors, level, color),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_iconFor(level), size: 11, color: color),
+                    const SizedBox(width: 3),
+                    Text(RequestHealth.label(level), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: color)),
+                    const SizedBox(width: 2),
+                    Icon(Icons.info_outline_rounded, size: 10, color: color.withValues(alpha: 0.7)),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

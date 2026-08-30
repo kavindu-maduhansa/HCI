@@ -364,7 +364,14 @@ class _QuickStatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
+    // #accessibility - the visual card is icon + a big number + a
+    // small label underneath, which a screen reader would otherwise
+    // read as three disconnected fragments. One composed label reads
+    // it the way a sighted person actually understands it: "Pending: 8".
+    return Semantics(
+      label: '${data.label}: ${data.value}${demo ? ' (demo data)' : ''}',
+      child: ExcludeSemantics(
+        child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colors.surface,
@@ -398,6 +405,8 @@ class _QuickStatChip extends StatelessWidget {
           const SizedBox(height: 2),
           Text(data.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: colors.textSecondary, fontWeight: FontWeight.w600)),
         ],
+      ),
+        ),
       ),
     );
   }
