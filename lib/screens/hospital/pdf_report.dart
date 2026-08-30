@@ -1,6 +1,11 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -118,10 +123,8 @@ Future<void> generateRequestReport({
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => doc.save(),
-      name: 'LifeLink_Request_${request.id}.pdf',
-    );
+    final bytes = await doc.save();
+    if (context.mounted) await _deliverPdf(context, bytes, 'LifeLink_Request_${request.id}.pdf');
   } catch (_) {
     if (context.mounted) {
       showErrorSnack(context, 'Could not generate the PDF report. Please try again.');
@@ -212,10 +215,8 @@ Future<void> generateHistorySummaryReport({
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => doc.save(),
-      name: 'LifeLink_History_Summary.pdf',
-    );
+    final bytes = await doc.save();
+    if (context.mounted) await _deliverPdf(context, bytes, 'LifeLink_History_Summary.pdf');
   } catch (_) {
     if (context.mounted) {
       showErrorSnack(context, 'Could not generate the PDF report. Please try again.');
@@ -416,10 +417,8 @@ Future<void> generateShiftHandoverReport({
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (format) async => doc.save(),
-      name: 'LifeLink_Shift_Handover_${_fileStamp(generatedAt)}.pdf',
-    );
+    final bytes = await doc.save();
+    if (context.mounted) await _deliverPdf(context, bytes, 'LifeLink_Shift_Handover_${_fileStamp(generatedAt)}.pdf');
   } catch (_) {
     if (context.mounted) {
       showErrorSnack(context, 'Could not generate the shift handover report. Please try again.');
@@ -431,6 +430,56 @@ String _fileStamp(DateTime dt) {
   final l = dt.toLocal();
   String two(int v) => v.toString().padLeft(2, '0');
   return '${l.year}${two(l.month)}${two(l.day)}_${two(l.hour)}${two(l.minute)}';
+}
+
+/// #pdf-download-fix - a single place every PDF generator in this file
+/// routes through to actually deliver the bytes, instead of always
+/// calling `Printing.layoutPdf` (a native print-preview dialog).
+///
+/// Why: on Windows/Linux desktop, `Printing.layoutPdf` depends on a
+/// working pdfium install, and when that's missing the dialog can
+/// fail to open with no visible error at all - which is exactly what
+/// showed up as "the PDF won't download". Writing the bytes straight
+/// to disk on desktop sidesteps that dependency entirely and is what
+/// "download" actually means to staff there. Web and mobile keep the
+/// platform-native flow, which already works reliably on those.
+Future<void> _deliverPdf(BuildContext context, Uint8List bytes, String filename) async {
+  if (kIsWeb) {
+    // On web, Printing.sharePdf triggers a real browser file download
+    // directly - no print dialog in the way.
+    await Printing.sharePdf(bytes: bytes, filename: filename);
+    return;
+  }
+  if (Platform.isAndroid || Platform.isIOS) {
+    // Native share sheet is the standard, reliable way to get a file
+    // out of the app on mobile.
+    await Printing.sharePdf(bytes: bytes, filename: filename);
+    return;
+  }
+
+  try {
+    final dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}${Platform.pathSeparator}$filename');
+    await file.writeAsBytes(bytes, flush: true);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved: ${file.path}'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'Print/Preview',
+            onPressed: () => Printing.layoutPdf(onLayout: (format) async => bytes, name: filename),
+          ),
+        ),
+      );
+    }
+  } catch (_) {
+    // Last resort - the bytes are already generated, so still offer
+    // the native print/preview dialog rather than silently failing.
+    if (context.mounted) {
+      await Printing.layoutPdf(onLayout: (format) async => bytes, name: filename);
+    }
+  }
 }
 
 pw.Widget _kv(String key, String value) {

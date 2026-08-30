@@ -51,6 +51,12 @@ dependencies:
   # will queue instead of syncing immediately.
   connectivity_plus: ^6.1.0
 
+  # Added so PDF reports save directly to disk on desktop (Windows/
+  # macOS/Linux) instead of only opening a native print dialog, which
+  # needs a working pdfium install and confused staff into thinking
+  # "download" was broken.
+  path_provider: ^2.1.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
