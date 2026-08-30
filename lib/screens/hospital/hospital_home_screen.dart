@@ -8,6 +8,7 @@ import 'tabs/verify_requests_tab.dart';
 import 'tabs/donor_search_tab.dart';
 import 'tabs/history_tab.dart';
 import 'alert_center_screen.dart';
+import 'request_details_screen.dart';
 import '../../services/alert_watcher.dart';
 import '../../theme/app_colors.dart';
 import '../../models/blood_request.dart';
@@ -227,9 +228,21 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
 /// heuristic used everywhere else in the module - nothing new is
 /// invented here, this just surfaces it globally instead of only on
 /// the Verify tab). Renders nothing when the count is zero.
-class _CriticalEscalationBanner extends StatelessWidget {
+///
+/// Expandable: tapping the chevron drops down the actual list of
+/// critical requests (patient, blood group, waiting time) so staff can
+/// jump straight into the one that needs them, instead of only a
+/// count + "go look at the tab yourself".
+class _CriticalEscalationBanner extends StatefulWidget {
   final VoidCallback onTap;
   const _CriticalEscalationBanner({required this.onTap});
+
+  @override
+  State<_CriticalEscalationBanner> createState() => _CriticalEscalationBannerState();
+}
+
+class _CriticalEscalationBannerState extends State<_CriticalEscalationBanner> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -238,17 +251,21 @@ class _CriticalEscalationBanner extends StatelessWidget {
       stream: FirebaseFirestore.instance.collection('requests').where('status', whereIn: RequestStatus.activeStatuses).snapshots(),
       builder: (context, snapshot) {
         final docs = snapshot.data?.docs ?? const [];
-        final criticalCount = docs.where((d) {
-          final r = BloodRequest.fromDoc(d);
-          final level = RequestHealth.computeLevel(
-            status: r.status,
-            urgency: r.urgency,
-            createdAt: r.createdAt,
-            unitsNeeded: r.unitsNeeded,
-            unitsConfirmed: r.unitsConfirmed,
-          );
-          return level == RequestHealth.criticalAttention;
-        }).length;
+        final criticalRequests = docs
+            .map(BloodRequest.fromDoc)
+            .where((r) {
+              final level = RequestHealth.computeLevel(
+                status: r.status,
+                urgency: r.urgency,
+                createdAt: r.createdAt,
+                unitsNeeded: r.unitsNeeded,
+                unitsConfirmed: r.unitsConfirmed,
+              );
+              return level == RequestHealth.criticalAttention;
+            })
+            .toList()
+          ..sort((a, b) => (a.createdAt ?? DateTime.now()).compareTo(b.createdAt ?? DateTime.now()));
+        final criticalCount = criticalRequests.length;
 
         return AnimatedSize(
           duration: const Duration(milliseconds: 220),
@@ -257,33 +274,98 @@ class _CriticalEscalationBanner extends StatelessWidget {
               ? const SizedBox(width: double.infinity)
               : Material(
                   color: colors.critical.withValues(alpha: 0.12),
-                  child: InkWell(
-                    onTap: onTap,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: colors.critical.withValues(alpha: 0.35)))),
-                      child: Row(
-                        children: [
-                          LivePulseDot(color: colors.critical),
-                          const SizedBox(width: 8),
-                          Icon(Icons.emergency_outlined, size: 15, color: colors.critical),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              criticalCount == 1
-                                  ? '1 request needs immediate attention - waiting time has passed the critical threshold.'
-                                  : '$criticalCount requests need immediate attention - waiting time has passed the critical threshold.',
-                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: colors.critical),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                  child: Column(
+                    children: [
+                      InkWell(
+                        onTap: () => setState(() => _expanded = !_expanded),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: colors.critical.withValues(alpha: 0.35)))),
+                          child: Row(
+                            children: [
+                              LivePulseDot(color: colors.critical),
+                              const SizedBox(width: 8),
+                              Icon(Icons.emergency_outlined, size: 15, color: colors.critical),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  criticalCount == 1
+                                      ? '1 request needs immediate attention - waiting time has passed the critical threshold.'
+                                      : '$criticalCount requests need immediate attention - waiting time has passed the critical threshold.',
+                                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: colors.critical),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(_expanded ? 'Hide' : 'Show', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: colors.critical)),
+                              AnimatedRotation(
+                                duration: const Duration(milliseconds: 200),
+                                turns: _expanded ? 0.5 : 0,
+                                child: Icon(Icons.expand_more_rounded, size: 18, color: colors.critical),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                          Text('Review now', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: colors.critical)),
-                          Icon(Icons.chevron_right_rounded, size: 16, color: colors.critical),
-                        ],
+                        ),
                       ),
-                    ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                        child: !_expanded
+                            ? const SizedBox(width: double.infinity)
+                            : Container(
+                                width: double.infinity,
+                                constraints: const BoxConstraints(maxHeight: 220),
+                                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: colors.critical.withValues(alpha: 0.35)))),
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemCount: criticalRequests.length,
+                                  itemBuilder: (context, i) {
+                                    final r = criticalRequests[i];
+                                    return InkWell(
+                                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RequestDetailsScreen(requestId: r.id))),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 28,
+                                              height: 28,
+                                              alignment: Alignment.center,
+                                              decoration: BoxDecoration(color: colors.critical.withValues(alpha: 0.15), shape: BoxShape.circle),
+                                              child: Text(r.bloodGroup, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: colors.critical)),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(r.patientName, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.textPrimary), overflow: TextOverflow.ellipsis),
+                                                  Text('Waiting ${WaitingTime.format(r.createdAt)} · ${r.hospitalName}', style: TextStyle(fontSize: 11, color: colors.textSecondary), overflow: TextOverflow.ellipsis),
+                                                ],
+                                              ),
+                                            ),
+                                            Icon(Icons.chevron_right_rounded, size: 16, color: colors.critical),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                      ),
+                      if (_expanded)
+                        InkWell(
+                          onTap: widget.onTap,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            alignment: Alignment.center,
+                            child: Text('Open full Verify Requests queue', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colors.critical, decoration: TextDecoration.underline)),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
         );

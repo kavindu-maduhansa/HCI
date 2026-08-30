@@ -434,6 +434,64 @@ int _matchScore(Map<String, dynamic> data, String? requestLocation) {
   return score;
 }
 
+/// #14 - One line item of the Match Score breakdown: a single scored
+/// factor (Compatibility / Availability / Eligibility / Location),
+/// with the exact points it contributed and a plain-language reason.
+/// Built from the same fields [_matchScore] uses - nothing invented,
+/// this just makes the existing arithmetic visible to staff.
+class _MatchFactor {
+  final String label;
+  final IconData icon;
+  final int points;
+  final int maxPoints;
+  final String detail;
+  const _MatchFactor({required this.label, required this.icon, required this.points, required this.maxPoints, required this.detail});
+}
+
+List<_MatchFactor> _matchBreakdown(Map<String, dynamic> data, String? requestLocation) {
+  final verified = data['verified'] == true;
+  final available = data['availableNow'] != false;
+  final lastDonation = (data['lastDonationDate'] as Timestamp?)?.toDate();
+  final eligible = DonorEligibility.isEligible(lastDonation);
+  final donorLocation = (data['location'] as String? ?? '').toLowerCase().trim();
+  final nearby = requestLocation != null && donorLocation.isNotEmpty && requestLocation.toLowerCase().trim().contains(donorLocation);
+
+  return [
+    _MatchFactor(
+      label: 'Verified Donor',
+      icon: Icons.verified_outlined,
+      points: verified ? 20 : 0,
+      maxPoints: 20,
+      detail: verified ? 'Identity verified by hospital/blood-bank staff.' : 'Not yet verified by staff.',
+    ),
+    _MatchFactor(
+      label: 'Availability',
+      icon: Icons.event_available_outlined,
+      points: available ? 20 : 0,
+      maxPoints: 20,
+      detail: available ? 'Marked available to donate right now.' : 'Currently marked unavailable.',
+    ),
+    _MatchFactor(
+      label: 'Eligibility (90-day rule)',
+      icon: Icons.health_and_safety_outlined,
+      points: eligible ? 30 : 0,
+      maxPoints: 30,
+      detail: eligible
+          ? (lastDonation == null ? 'No prior donation on record - eligible by default.' : 'Past the required 90-day recovery window since last donation.')
+          : 'Still inside the 90-day recovery window since last donation.',
+    ),
+    _MatchFactor(
+      label: 'Location Proximity',
+      icon: Icons.location_on_outlined,
+      points: requestLocation == null ? 15 : (nearby ? 30 : 0),
+      maxPoints: 30,
+      detail: requestLocation == null
+          ? 'No request location to compare against - neutral score.'
+          : (nearby ? 'Donor location matches the request location.' : 'Donor location does not match the request location.'),
+    ),
+  ];
+}
+
 /// #14 - Match tier label + medal, purely a presentation layer over
 /// the same transparent [_matchScore].
 class _MatchTier {
@@ -441,6 +499,83 @@ class _MatchTier {
   final String label;
   final Color Function(AppColors) color;
   const _MatchTier(this.emoji, this.label, this.color);
+}
+
+/// #14 - "WHY this donor matched": tapping the score/tier chip opens a
+/// transparent, factor-by-factor breakdown of the exact same points
+/// used to rank the donor, so staff never have to trust a bare number.
+void _showMatchBreakdown(BuildContext context, AppColors colors, int score, _MatchTier? tier, Map<String, dynamic> data, String? requestLocation) {
+  final factors = _matchBreakdown(data, requestLocation);
+  showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: colors.surface,
+        title: Row(
+          children: [
+            if (tier != null) ...[Text(tier.emoji, style: const TextStyle(fontSize: 18)), const SizedBox(width: 8)],
+            Expanded(child: Text('$score% Application Match', style: TextStyle(color: colors.textPrimary, fontSize: 16))),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final f in factors)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(f.icon, size: 15, color: f.points > 0 ? colors.success : colors.textSecondary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(f.label, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colors.textPrimary)),
+                                Text('+${f.points}/${f.maxPoints}', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: f.points > 0 ? colors.success : colors.textSecondary)),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(f.detail, style: TextStyle(fontSize: 11.5, color: colors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: colors.warning.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline_rounded, size: 15, color: colors.warning),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Matching assistance only. Final donor selection remains with authorized medical staff.',
+                        style: TextStyle(fontSize: 11.5, color: colors.textSecondary, fontStyle: FontStyle.italic),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close')),
+        ],
+      );
+    },
+  );
 }
 
 _MatchTier? _tierFor(int score) {
@@ -554,12 +689,19 @@ class _DonorCard extends StatelessWidget {
             if (tier != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  children: [
-                    Text(tier.emoji, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(width: 4),
-                    Text(tier.label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tier.color(colors), letterSpacing: 0.4)),
-                  ],
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => _showMatchBreakdown(context, colors, score, tier, data, requestLocation),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(tier.emoji, style: const TextStyle(fontSize: 14)),
+                      const SizedBox(width: 4),
+                      Text(tier.label, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: tier.color(colors), letterSpacing: 0.4)),
+                      const SizedBox(width: 3),
+                      Icon(Icons.info_outline_rounded, size: 10, color: tier.color(colors).withValues(alpha: 0.7)),
+                    ],
+                  ),
                 ),
               ),
             Row(
@@ -588,10 +730,21 @@ class _DonorCard extends StatelessWidget {
                   ),
                 ),
                 if (selectMode)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(color: colors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-                    child: Text('$score% Match', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colors.primary)),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _showMatchBreakdown(context, colors, score, tier, data, requestLocation),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(color: colors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('$score% Match', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colors.primary)),
+                          const SizedBox(width: 2),
+                          Icon(Icons.info_outline_rounded, size: 10, color: colors.primary.withValues(alpha: 0.7)),
+                        ],
+                      ),
+                    ),
                   )
                 else
                   Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
