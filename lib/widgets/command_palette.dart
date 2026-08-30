@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -63,17 +65,46 @@ class _CommandPaletteDialogState extends State<_CommandPaletteDialog> {
   final _focusNode = FocusNode();
   int _selectedIndex = 0;
 
+  // #global-search-debounce - the live REQUESTS/DONORS results come
+  // from Firestore snapshots and are filtered client-side over
+  // potentially large collections; re-filtering on every single
+  // keystroke while someone is still typing is wasted work and can
+  // make fast typing feel janky. Fixed commands stay instant (cheap,
+  // local list filter on ~8 items) - only the expensive live search
+  // waits for a short pause in typing before it updates.
+  static const _debounceDelay = Duration(milliseconds: 180);
+  Timer? _debounceTimer;
+  String _liveQuery = '';
+
+  // #perf - created once instead of calling `.snapshots()` inline
+  // inside build(), which would otherwise construct a brand new
+  // Firestore stream (and force a resubscribe) on every rebuild,
+  // i.e. every keystroke.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _requestsStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _donorsStream;
+
   @override
   void initState() {
     super.initState();
+    _requestsStream = FirebaseFirestore.instance.collection('requests').snapshots();
+    _donorsStream = FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Donor').snapshots();
     WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    setState(() => _selectedIndex = 0);
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounceDelay, () {
+      if (mounted) setState(() => _liveQuery = value.trim().toLowerCase());
+    });
   }
 
   List<_PaletteEntry> _commands(BuildContext context) {
@@ -154,7 +185,7 @@ class _CommandPaletteDialogState extends State<_CommandPaletteDialog> {
                           child: TextField(
                             controller: _controller,
                             focusNode: _focusNode,
-                            onChanged: (_) => setState(() => _selectedIndex = 0),
+                            onChanged: _onQueryChanged,
                             style: TextStyle(color: colors.textPrimary, fontSize: 15),
                             decoration: InputDecoration(
                               border: InputBorder.none,
@@ -176,6 +207,9 @@ class _CommandPaletteDialogState extends State<_CommandPaletteDialog> {
                 Flexible(
                   child: _CommandPaletteResults(
                     query: query,
+                    liveQuery: _liveQuery,
+                    requestsStream: _requestsStream,
+                    donorsStream: _donorsStream,
                     commands: commands,
                     selectedIndex: _selectedIndex,
                     onHover: (i) => setState(() => _selectedIndex = i),
@@ -235,10 +269,21 @@ class _KeyHint extends StatelessWidget {
 
 class _CommandPaletteResults extends StatelessWidget {
   final String query;
+  final String liveQuery;
+  final Stream<QuerySnapshot<Map<String, dynamic>>> requestsStream;
+  final Stream<QuerySnapshot<Map<String, dynamic>>> donorsStream;
   final List<_PaletteEntry> commands;
   final int selectedIndex;
   final ValueChanged<int> onHover;
-  const _CommandPaletteResults({required this.query, required this.commands, required this.selectedIndex, required this.onHover});
+  const _CommandPaletteResults({
+    required this.query,
+    required this.liveQuery,
+    required this.requestsStream,
+    required this.donorsStream,
+    required this.commands,
+    required this.selectedIndex,
+    required this.onHover,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -255,29 +300,39 @@ class _CommandPaletteResults extends StatelessWidget {
       );
     }
 
+    // #global-search-debounce - while the user is still typing (query
+    // has raced ahead of the debounced liveQuery), keep showing the
+    // instant COMMANDS matches and skip re-filtering the Firestore
+    // snapshots until liveQuery catches up 180ms after they pause.
+    final searching = query != liveQuery;
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('requests').snapshots(),
+      stream: requestsStream,
       builder: (context, requestSnap) {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Donor').snapshots(),
+          stream: donorsStream,
           builder: (context, donorSnap) {
-            final requests = (requestSnap.data?.docs ?? const [])
-                .map(BloodRequest.fromDoc)
-                .where((r) => r.patientName.toLowerCase().contains(query) || r.hospitalName.toLowerCase().contains(query) || r.location.toLowerCase().contains(query))
-                .take(6)
-                .toList();
+            final requests = searching
+                ? const <BloodRequest>[]
+                : (requestSnap.data?.docs ?? const [])
+                    .map(BloodRequest.fromDoc)
+                    .where((r) => r.patientName.toLowerCase().contains(liveQuery) || r.hospitalName.toLowerCase().contains(liveQuery) || r.location.toLowerCase().contains(liveQuery))
+                    .take(6)
+                    .toList();
 
-            final donors = (donorSnap.data?.docs ?? const [])
-                .where((d) {
-                  final data = d.data();
-                  final name = (data['fullName'] as String? ?? '').toLowerCase();
-                  final loc = (data['location'] as String? ?? '').toLowerCase();
-                  return name.contains(query) || loc.contains(query);
-                })
-                .take(6)
-                .toList();
+            final donors = searching
+                ? const <QueryDocumentSnapshot<Map<String, dynamic>>>[]
+                : (donorSnap.data?.docs ?? const [])
+                    .where((d) {
+                      final data = d.data();
+                      final name = (data['fullName'] as String? ?? '').toLowerCase();
+                      final loc = (data['location'] as String? ?? '').toLowerCase();
+                      return name.contains(liveQuery) || loc.contains(liveQuery);
+                    })
+                    .take(6)
+                    .toList();
 
-            if (commands.isEmpty && requests.isEmpty && donors.isEmpty) {
+            if (commands.isEmpty && !searching && requests.isEmpty && donors.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 28),
                 child: Center(child: Text('No matches for "$query"', style: TextStyle(fontSize: 12.5, color: colors.textSecondary))),
@@ -300,6 +355,13 @@ class _CommandPaletteResults extends StatelessWidget {
                   _SectionHeader(label: 'DONORS'),
                   ...donors.map((d) => _DonorResultTile(data: d.data())),
                 ],
+                if (searching)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Center(
+                      child: Text('Searching requests & donors...', style: TextStyle(fontSize: 11.5, color: colors.textSecondary, fontStyle: FontStyle.italic)),
+                    ),
+                  ),
               ],
             );
           },
