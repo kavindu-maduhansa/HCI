@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../request_details_screen.dart';
 import '../../../models/blood_request.dart';
@@ -43,11 +46,82 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
   static const _urgencies = [UrgencyLevel.critical, UrgencyLevel.high, UrgencyLevel.normal];
   static const _kTableBreakpoint = 900.0;
 
+  // #advanced-filters - same on-device Saved Filters pattern already
+  // shipped on the History tab (SharedPreferences, no backend needed),
+  // extended here so a doctor's frequently-used Verify queue combo
+  // (e.g. "Critical O-") survives an app restart too.
+  static const _savedFiltersKey = 'verify_saved_filters_v1';
+  List<_SavedVerifyFilter> _savedFilters = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedFilters();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
+
+  Future<void> _loadSavedFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_savedFiltersKey);
+    if (raw == null) return;
+    try {
+      final list = (jsonDecode(raw) as List).map((e) => _SavedVerifyFilter.fromJson(e as Map<String, dynamic>)).toList();
+      if (mounted) setState(() => _savedFilters = list);
+    } catch (_) {
+      // Corrupt/old-format local data - safe to ignore and start fresh.
+    }
+  }
+
+  Future<void> _persistSavedFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_savedFiltersKey, jsonEncode(_savedFilters.map((f) => f.toJson()).toList()));
+  }
+
+  bool get _hasActiveFilter => _bloodGroupFilter != null || _urgencyFilter != null;
+
+  void _applyFilter(_SavedVerifyFilter f) {
+    setState(() {
+      _bloodGroupFilter = f.bloodGroup;
+      _urgencyFilter = f.urgency;
+    });
+  }
+
+  Future<void> _saveCurrentFilter() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save this filter'),
+        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'e.g. Critical O- Queue')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    setState(() => _savedFilters = [
+          ..._savedFilters,
+          _SavedVerifyFilter(name: name, bloodGroup: _bloodGroupFilter, urgency: _urgencyFilter),
+        ]);
+    await _persistSavedFilters();
+  }
+
+  Future<void> _deleteSavedFilter(_SavedVerifyFilter f) async {
+    setState(() => _savedFilters = _savedFilters.where((x) => x != f).toList());
+    await _persistSavedFilters();
+  }
+
+  static final List<_SavedVerifyFilter> _quickPresets = [
+    _SavedVerifyFilter(name: 'Critical Only', urgency: UrgencyLevel.critical, icon: Icons.emergency_outlined),
+    _SavedVerifyFilter(name: 'O- Requests', bloodGroup: 'O-', icon: Icons.bloodtype_outlined),
+    _SavedVerifyFilter(name: 'High Priority', urgency: UrgencyLevel.high, icon: Icons.priority_high_rounded),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +214,51 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
                       onTap: () => setState(() => _urgencyFilter = _urgencyFilter == u ? null : u),
                     ),
                   )),
+            ],
+          ),
+        ),
+        // #advanced-filters - Quick Presets + on-device Saved Filters,
+        // the same pattern already shipped on History, so a doctor's
+        // go-to Verify combo is one tap away instead of re-picking
+        // blood group + urgency chips every time.
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            children: [
+              for (final preset in _quickPresets)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    avatar: Icon(preset.icon, size: 14, color: colors.champagne),
+                    label: Text(preset.name, style: const TextStyle(fontSize: 11.5)),
+                    backgroundColor: colors.champagne.withValues(alpha: 0.12),
+                    side: BorderSide(color: colors.champagne.withValues(alpha: 0.35)),
+                    onPressed: () => _applyFilter(preset),
+                  ),
+                ),
+              for (final f in _savedFilters)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InputChip(
+                    avatar: Icon(f.icon, size: 14, color: colors.primary),
+                    label: Text(f.name, style: const TextStyle(fontSize: 11.5)),
+                    backgroundColor: colors.primary.withValues(alpha: 0.1),
+                    side: BorderSide(color: colors.primary.withValues(alpha: 0.35)),
+                    onPressed: () => _applyFilter(f),
+                    onDeleted: () => _deleteSavedFilter(f),
+                    deleteIconColor: colors.textSecondary,
+                  ),
+                ),
+              if (_hasActiveFilter)
+                ActionChip(
+                  avatar: Icon(Icons.bookmark_add_outlined, size: 14, color: colors.textSecondary),
+                  label: const Text('Save Filter', style: TextStyle(fontSize: 11.5)),
+                  backgroundColor: colors.elevatedSurface,
+                  side: BorderSide(color: colors.border),
+                  onPressed: _saveCurrentFilter,
+                ),
             ],
           ),
         ),
@@ -535,6 +654,25 @@ class _FilterChip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A saved (or quick-preset) filter combo for the Verify Requests
+/// queue - blood group + urgency only, mirroring the pattern already
+/// shipped on the History tab. Persisted locally (SharedPreferences)
+/// under its own key so it never collides with History's saved list.
+class _SavedVerifyFilter {
+  final String name;
+  final String? bloodGroup;
+  final String? urgency;
+  final IconData icon;
+  _SavedVerifyFilter({required this.name, this.bloodGroup, this.urgency, this.icon = Icons.bookmark_rounded});
+
+  Map<String, dynamic> toJson() => {'name': name, 'bloodGroup': bloodGroup, 'urgency': urgency};
+  factory _SavedVerifyFilter.fromJson(Map<String, dynamic> json) => _SavedVerifyFilter(
+        name: json['name'] as String? ?? 'Filter',
+        bloodGroup: json['bloodGroup'] as String?,
+        urgency: json['urgency'] as String?,
+      );
 }
 
 class _PendingRequestCard extends StatelessWidget {
