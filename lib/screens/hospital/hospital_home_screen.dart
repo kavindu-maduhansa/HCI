@@ -10,6 +10,7 @@ import 'tabs/history_tab.dart';
 import 'alert_center_screen.dart';
 import 'request_details_screen.dart';
 import '../../services/alert_watcher.dart';
+import '../../services/presence_service.dart';
 import '../../theme/app_colors.dart';
 import '../../models/blood_request.dart';
 import '../../utils/request_status.dart';
@@ -62,11 +63,14 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
   void initState() {
     super.initState();
     _alertWatcher.start();
+    final user = FirebaseAuth.instance.currentUser;
+    PresenceService.instance.start(staffName: user?.email ?? 'Staff');
   }
 
   @override
   void dispose() {
     _alertWatcher.dispose();
+    PresenceService.instance.dispose();
     super.dispose();
   }
 
@@ -113,6 +117,8 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
         foregroundColor: colors.textPrimary,
         surfaceTintColor: Colors.transparent,
         actions: [
+          const _StaffPresenceChip(),
+          const SizedBox(width: 4),
           IconButton(
             tooltip: 'Search (Ctrl+K)',
             icon: const Icon(Icons.search_rounded),
@@ -368,6 +374,44 @@ class _CriticalEscalationBannerState extends State<_CriticalEscalationBanner> {
                     ],
                   ),
                 ),
+        );
+      },
+    );
+  }
+}
+
+/// #live-presence - "N staff online" indicator, backed by
+/// [PresenceService]'s Firestore heartbeat. Renders nothing while the
+/// count is 0 or 1 (just this session) so it never claims a co-worker
+/// is online when nobody else actually is.
+class _StaffPresenceChip extends StatelessWidget {
+  const _StaffPresenceChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return StreamBuilder<int>(
+      stream: PresenceService.instance.onlineCount(),
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 1;
+        if (count <= 1) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(right: 2),
+          child: Tooltip(
+            message: '$count staff currently active in this module',
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(color: colors.success.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LivePulseDot(color: colors.success),
+                  const SizedBox(width: 6),
+                  Text('$count online', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: colors.success)),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );
