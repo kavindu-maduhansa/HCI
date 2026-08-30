@@ -1,0 +1,344 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../request_details_screen.dart';
+import '../pdf_report.dart';
+import '../../../models/blood_request.dart';
+import '../../../utils/request_status.dart';
+import '../../../theme/app_colors.dart';
+import '../../../widgets/common_states.dart';
+import '../../../widgets/entrance_fade_slide.dart';
+import '../../../widgets/pressable_scale.dart';
+import '../../../widgets/skeleton_loader.dart';
+
+/// FR14 - Request history, upgraded with advanced search (#9) and a
+/// compact analytics summary + PDF export.
+///
+/// The Firestore query only filters by status server-side
+/// (`whereIn` history statuses) - it deliberately does NOT add a
+/// server-side `orderBy` on a different field, because that combo
+/// requires a Firestore composite index that does not exist in this
+/// project yet. Sorting by `updatedAt` is instead done client-side on
+/// the already-narrowed result set, so History works out of the box
+/// without anyone needing to create an index in the Firebase console.
+class HistoryTab extends StatefulWidget {
+  const HistoryTab({super.key});
+
+  @override
+  State<HistoryTab> createState() => _HistoryTabState();
+}
+
+class _HistoryTabState extends State<HistoryTab> {
+  String? _statusFilter;
+  String? _priorityFilter;
+  String? _bloodGroupFilter;
+  DateTimeRange? _dateRange;
+  final TextEditingController _searchController = TextEditingController();
+
+  static const _groups = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+      initialDateRange: _dateRange,
+    );
+    if (range != null) setState(() => _dateRange = range);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      children: [
+        EntranceFadeSlide(
+          child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (_) => setState(() {}),
+            style: TextStyle(color: colors.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Search by request ID, patient, blood group, or hospital...',
+              hintStyle: TextStyle(color: colors.textSecondary),
+              prefixIcon: Icon(Icons.search_rounded, color: colors.textSecondary),
+              filled: true,
+              fillColor: colors.elevatedSurface,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.border)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.border)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.primary, width: 1.6)),
+            ),
+          ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _Chip(label: 'All Status', selected: _statusFilter == null, onTap: () => setState(() => _statusFilter = null)),
+                ...RequestStatus.historyStatuses.map((s) => Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: _Chip(label: RequestStatus.label(s), selected: _statusFilter == s, onTap: () => setState(() => _statusFilter = s)),
+                    )),
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: _Chip(label: 'All Priority', selected: _priorityFilter == null, onTap: () => setState(() => _priorityFilter = null)),
+                ),
+                ...UrgencyLevel.all.map((u) => Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: _Chip(label: u, selected: _priorityFilter == u, onTap: () => setState(() => _priorityFilter = u)),
+                    )),
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Container(width: 1, color: colors.border, margin: const EdgeInsets.symmetric(vertical: 8)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: _Chip(label: 'All Groups', selected: _bloodGroupFilter == null, onTap: () => setState(() => _bloodGroupFilter = null)),
+                ),
+                ..._groups.map((g) => Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: _Chip(label: g, selected: _bloodGroupFilter == g, onTap: () => setState(() => _bloodGroupFilter = _bloodGroupFilter == g ? null : g)),
+                    )),
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: ActionChip(
+                    avatar: Icon(Icons.date_range_rounded, size: 15, color: colors.primary),
+                    label: Text(_dateRange == null ? 'Date Range' : '${_fmt(_dateRange!.start)} - ${_fmt(_dateRange!.end)}',
+                        style: TextStyle(fontSize: 11, color: colors.textPrimary)),
+                    onPressed: _pickDateRange,
+                    backgroundColor: colors.elevatedSurface,
+                    side: BorderSide(color: _dateRange == null ? colors.border : colors.primary),
+                  ),
+                ),
+                if (_dateRange != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: IconButton(
+                      icon: Icon(Icons.close_rounded, size: 16, color: colors.textSecondary),
+                      onPressed: () => setState(() => _dateRange = null),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('requests')
+                .where('status', whereIn: RequestStatus.historyStatuses)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return ErrorStateView(message: 'Unable to load request history right now.\n${snapshot.error}');
+              }
+              if (!snapshot.hasData) {
+                return const ListCardSkeleton();
+              }
+
+              var requests = snapshot.data!.docs.map(BloodRequest.fromDoc).toList()
+                ..sort((a, b) => (b.updatedAt ?? b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                    .compareTo(a.updatedAt ?? a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+
+              if (_statusFilter != null) requests = requests.where((r) => r.status == _statusFilter).toList();
+              if (_priorityFilter != null) requests = requests.where((r) => r.urgency == _priorityFilter).toList();
+              if (_bloodGroupFilter != null) requests = requests.where((r) => r.bloodGroup == _bloodGroupFilter).toList();
+              if (_dateRange != null) {
+                requests = requests.where((r) {
+                  if (r.createdAt == null) return false;
+                  final d = r.createdAt!;
+                  return !d.isBefore(_dateRange!.start) && d.isBefore(_dateRange!.end.add(const Duration(days: 1)));
+                }).toList();
+              }
+              final query = _searchController.text.trim().toLowerCase();
+              if (query.isNotEmpty) {
+                requests = requests.where((r) {
+                  return r.id.toLowerCase().contains(query) ||
+                      r.patientName.toLowerCase().contains(query) ||
+                      r.bloodGroup.toLowerCase().contains(query) ||
+                      r.hospitalName.toLowerCase().contains(query);
+                }).toList();
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _HistorySummaryBar(requests: requests),
+                  Expanded(
+                    child: requests.isEmpty
+                        ? const EmptyState(icon: Icons.folder_off_outlined, title: 'No matching requests', message: 'Try adjusting your search or filters.')
+                        : ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                            itemCount: requests.length,
+                            separatorBuilder: (_, _) => const SizedBox(height: 10),
+                            itemBuilder: (context, index) => EntranceFadeSlide(
+                              delay: Duration(milliseconds: 30 * index.clamp(0, 10)),
+                              child: _HistoryRequestCard(request: requests[index]),
+                            ),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _fmt(DateTime d) => '${d.day}/${d.month}';
+}
+
+/// Compact, deterministic (non-AI) analytics for the currently filtered
+/// history list, plus a PDF export of exactly what's on screen.
+class _HistorySummaryBar extends StatelessWidget {
+  final List<BloodRequest> requests;
+  const _HistorySummaryBar({required this.requests});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    if (requests.isEmpty) return const SizedBox.shrink();
+
+    final fulfilled = requests.where((r) => r.status == RequestStatus.fulfilled).length;
+    final rejected = requests.where((r) => r.status == RequestStatus.rejected).length;
+    final expired = requests.where((r) => r.status == RequestStatus.expired).length;
+    final fulfilmentRate = requests.isEmpty ? 0 : ((fulfilled / requests.length) * 100).round();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.elevatedSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: 14,
+              runSpacing: 6,
+              children: [
+                _SummaryStat(label: 'Total', value: '${requests.length}', color: colors.textPrimary),
+                _SummaryStat(label: 'Fulfilled', value: '$fulfilled', color: colors.success),
+                _SummaryStat(label: 'Rejected', value: '$rejected', color: colors.critical),
+                _SummaryStat(label: 'Expired', value: '$expired', color: colors.warning),
+                _SummaryStat(label: 'Fulfilment rate', value: '$fulfilmentRate%', color: colors.primary),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Export PDF (current filters)',
+            icon: Icon(Icons.picture_as_pdf_outlined, color: colors.primary),
+            onPressed: () => generateHistorySummaryReport(context: context, requests: requests),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _SummaryStat({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 11, color: colors.textSecondary)),
+      ],
+    );
+  }
+}
+
+class _HistoryRequestCard extends StatelessWidget {
+  final BloodRequest request;
+  const _HistoryRequestCard({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final statusColor = RequestStatus.color(request.status);
+    return PressableScale(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RequestDetailsScreen(requestId: request.id))),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: statusColor.withValues(alpha: 0.12),
+              child: Icon(RequestStatus.icon(request.status), size: 18, color: statusColor),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(request.patientName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: colors.textPrimary)),
+                  const SizedBox(height: 2),
+                  Text('${request.bloodGroup} · ${request.unitsNeeded} unit(s) · ${request.hospitalName}',
+                      style: TextStyle(fontSize: 11, color: colors.textSecondary)),
+                  Text(RequestStatus.label(request.status), style: TextStyle(fontSize: 11, color: statusColor)),
+                ],
+              ),
+            ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+                Text('View', style: TextStyle(fontSize: 9.5, color: colors.textSecondary)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _Chip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ChoiceChip(
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: colors.primary.withValues(alpha: 0.15),
+      labelStyle: TextStyle(color: selected ? colors.primary : colors.textSecondary),
+      backgroundColor: colors.elevatedSurface,
+      side: BorderSide(color: selected ? colors.primary : colors.border),
+    );
+  }
+}

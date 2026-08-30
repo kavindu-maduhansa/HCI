@@ -1,0 +1,76 @@
+rules_version = '2';
+
+// LifeLink - minimal, additive Firestore security rules.
+//
+// IMPORTANT: no firestore.rules existed in this project before this
+// change (firebase.json only configures FlutterFire app options, not
+// deployed rules) - the project has been running on whatever default
+// rules are currently set in the Firebase console. This file is a
+// starting point for role-based access control; it must be reviewed
+// by the whole team and deployed manually (see instructions below)
+// since this session cannot deploy to your Firebase project itself.
+//
+// Deploy options:
+//   1) Firebase console -> Firestore Database -> Rules -> paste this file, or
+//   2) `firebase init firestore` (point it at this file) then
+//      `firebase deploy --only firestore:rules` from the project root.
+//
+// Roles are read from `users/{uid}.role` (Donor / Recipient / Hospital
+// / Organisation), matching the values already written by
+// register_screen.dart.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isHospitalStaff() {
+      return isSignedIn() && userRole() in ['Hospital', 'Organisation'];
+    }
+
+    // --- users ---------------------------------------------------
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      // Users manage their own profile; hospital/organisation staff
+      // may also update a donor's record (verification, blood group,
+      // location, eligibility) from the Doctor dashboard.
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() && (request.auth.uid == uid || isHospitalStaff());
+      allow delete: if false;
+    }
+
+    // --- requests --------------------------------------------------
+    match /requests/{requestId} {
+      allow read: if isSignedIn();
+      // Recipients create their own requests; hospital/organisation
+      // staff verify, reject, and coordinate them afterwards.
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isHospitalStaff() || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+      allow delete: if false;
+
+      match /responses/{responseId} {
+        allow read: if isSignedIn();
+        allow write: if isHospitalStaff();
+      }
+    }
+
+    // --- auditLogs (write-once, hospital/organisation only) -------
+    match /auditLogs/{entryId} {
+      allow read: if isHospitalStaff();
+      allow create: if isHospitalStaff();
+      allow update, delete: if false;
+    }
+
+    // --- alerts (hospital/organisation only) ----------------------
+    match /alerts/{alertId} {
+      allow read: if isHospitalStaff();
+      allow write: if isHospitalStaff();
+    }
+  }
+}
