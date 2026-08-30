@@ -17,6 +17,7 @@ import '../../utils/request_status.dart';
 import '../../widgets/appearance_selector_sheet.dart';
 import '../../widgets/command_palette.dart';
 import '../../widgets/live_pulse_dot.dart';
+import '../../widgets/offline_banner.dart';
 
 // Burgundy - the Doctor / Blood Bank module's brand identity color
 // (Obsidian + Burgundy + Champagne + Ivory visual system). Kept as a
@@ -139,6 +140,10 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
       ),
       body: Column(
         children: [
+          // #offline-banner - real connectivity state, above the
+          // critical banner since "you're offline" changes what every
+          // other action on this screen actually means right now.
+          const OfflineBanner(),
           // #critical - a persistent, app-wide banner (visible from
           // every tab, not just Verify) the instant any active request
           // crosses its urgency-specific critical-attention SLA. This

@@ -46,6 +46,11 @@ dependencies:
   # (persists the selected ThemeMode across app restarts).
   shared_preferences: ^2.3.2
 
+  # Added for the app-wide Offline banner - reports real connectivity
+  # changes (not a fabricated indicator) so staff know when actions
+  # will queue instead of syncing immediately.
+  connectivity_plus: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
