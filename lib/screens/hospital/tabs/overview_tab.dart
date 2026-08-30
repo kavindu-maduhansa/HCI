@@ -84,6 +84,15 @@ class OverviewTab extends StatelessWidget {
                         // Staggered entrance (#dashboard entrance animation): each
                         // section fades/slides in a little after the previous one,
                         // instead of everything appearing at once.
+                        // #dashboard-reorganize - the dashboard had grown to
+                        // 13 stacked cards read as one undifferentiated
+                        // scroll, with no visual hierarchy telling staff
+                        // what kind of information each one held. Grouped
+                        // into 4 named sections (Gestalt "proximity" -
+                        // related cards sit closer together, unrelated
+                        // groups get a clear header + extra breathing
+                        // room) so the page reads as a structured
+                        // document instead of an undifferentiated list.
                         return ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
@@ -93,11 +102,12 @@ class OverviewTab extends StatelessWidget {
                               delay: const Duration(milliseconds: 60),
                               child: _QuickStatsRow(allRequests: allRequests, donorDocs: donorDocs, unreadAlerts: unreadAlerts),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 14),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 80),
                               child: _WeekComparisonStrip(allRequests: allRequests),
                             ),
+
                             if (pinnedRequests.isNotEmpty) ...[
                               const SizedBox(height: 20),
                               EntranceFadeSlide(
@@ -105,55 +115,76 @@ class OverviewTab extends StatelessWidget {
                                 child: _PinnedRequestsSection(requests: pinnedRequests),
                               ),
                             ],
-                            const SizedBox(height: 20),
+
+                            const SizedBox(height: 30),
+                            const _DashboardSectionHeader(
+                              icon: Icons.emergency_share_rounded,
+                              title: 'Operations',
+                              subtitle: 'What needs a decision right now',
+                            ),
+                            const SizedBox(height: 12),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 120),
                               child: _DoctorInsightsSection(allRequests: allRequests, responseDocs: responseDocs),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 140),
                               child: _CommandCenterSection(allRequests: allRequests),
                             ),
-                            const SizedBox(height: 20),
-                            EntranceFadeSlide(
-                              delay: const Duration(milliseconds: 180),
-                              child: _AnalyticsSection(allRequests: allRequests, donorCount: donorDocs.length),
-                            ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 220),
                               child: _ResponseFunnelSection(responseDocs: responseDocs),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 260),
                               child: _ResponsePerformanceSection(responseDocs: responseDocs),
                             ),
-                            const SizedBox(height: 20),
+
+                            const SizedBox(height: 30),
+                            const _DashboardSectionHeader(
+                              icon: Icons.insights_rounded,
+                              title: 'Analytics',
+                              subtitle: 'Trends and patterns across all requests',
+                            ),
+                            const SizedBox(height: 12),
+                            EntranceFadeSlide(
+                              delay: const Duration(milliseconds: 180),
+                              child: _AnalyticsSection(allRequests: allRequests, donorCount: donorDocs.length),
+                            ),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 280),
                               child: _DonorLeaderboardSection(responseDocs: responseDocs),
                             ),
-                            const SizedBox(height: 20),
-                            EntranceFadeSlide(
-                              delay: const Duration(milliseconds: 300),
-                              child: _LiveActivityFeedSection(auditDocs: auditDocs),
-                            ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 340),
                               child: _RequestTrendCard(allRequests: allRequests),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 380),
                               child: _BloodDemandCard(allRequests: allRequests),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 16),
                             EntranceFadeSlide(
                               delay: const Duration(milliseconds: 420),
                               child: _BloodGroupChartCard(donorDocs: donorDocs),
+                            ),
+
+                            const SizedBox(height: 30),
+                            const _DashboardSectionHeader(
+                              icon: Icons.history_rounded,
+                              title: 'Activity',
+                              subtitle: 'Recent actions across the module',
+                            ),
+                            const SizedBox(height: 12),
+                            EntranceFadeSlide(
+                              delay: const Duration(milliseconds: 300),
+                              child: _LiveActivityFeedSection(auditDocs: auditDocs),
                             ),
                           ],
                         );
@@ -166,6 +197,52 @@ class OverviewTab extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+/// #dashboard-reorganize - a named group header (icon + title +
+/// one-line subtitle) used to break the long dashboard scroll into
+/// clearly labelled sections (Operations / Analytics / Activity)
+/// instead of one undifferentiated stack of cards.
+class _DashboardSectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  const _DashboardSectionHeader({required this.icon, required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      header: true,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(color: kHospitalPrimary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(9)),
+            child: Icon(icon, size: 15, color: kHospitalPrimary),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: colors.textPrimary, letterSpacing: 0.2)),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: colors.textSecondary)),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Container(height: 1, color: colors.border),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
