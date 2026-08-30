@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../request_details_screen.dart';
 import '../pdf_report.dart';
@@ -35,12 +38,77 @@ class _HistoryTabState extends State<HistoryTab> {
   DateTimeRange? _dateRange;
   final TextEditingController _searchController = TextEditingController();
 
+  // #5 - Saved Filters, persisted on this device (SharedPreferences)
+  // so a doctor's frequently-used filter combos (e.g. "O- Requests")
+  // survive app restarts without needing any backend support.
+  static const _savedFiltersKey = 'history_saved_filters_v1';
+  List<_SavedFilter> _savedFilters = [];
+
   static const _groups = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedFilters();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSavedFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_savedFiltersKey);
+    if (raw == null) return;
+    try {
+      final list = (jsonDecode(raw) as List).map((e) => _SavedFilter.fromJson(e as Map<String, dynamic>)).toList();
+      if (mounted) setState(() => _savedFilters = list);
+    } catch (_) {
+      // Corrupt/old-format local data - safe to ignore and start fresh.
+    }
+  }
+
+  Future<void> _persistSavedFilters() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_savedFiltersKey, jsonEncode(_savedFilters.map((f) => f.toJson()).toList()));
+  }
+
+  bool get _hasActiveFilter => _statusFilter != null || _priorityFilter != null || _bloodGroupFilter != null;
+
+  void _applyFilter(_SavedFilter f) {
+    setState(() {
+      _statusFilter = f.status;
+      _priorityFilter = f.priority;
+      _bloodGroupFilter = f.bloodGroup;
+    });
+  }
+
+  Future<void> _saveCurrentFilter() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save this filter'),
+        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'e.g. Critical O- Requests')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    setState(() => _savedFilters = [
+          ..._savedFilters,
+          _SavedFilter(name: name, status: _statusFilter, priority: _priorityFilter, bloodGroup: _bloodGroupFilter),
+        ]);
+    await _persistSavedFilters();
+  }
+
+  Future<void> _deleteSavedFilter(_SavedFilter f) async {
+    setState(() => _savedFilters = _savedFilters.where((x) => x != f).toList());
+    await _persistSavedFilters();
   }
 
   Future<void> _pickDateRange() async {
@@ -134,6 +202,52 @@ class _HistoryTabState extends State<HistoryTab> {
             ),
           ),
         ),
+        // #5 - Quick Presets (fixed, always available) + Saved Filters
+        // (user-defined, persisted on-device). One tap applies the
+        // whole status/priority/blood-group combo at once.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SizedBox(
+            height: 32,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final preset in _quickPresets)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      avatar: Icon(preset.icon, size: 13, color: colors.champagne),
+                      label: Text(preset.name, style: TextStyle(fontSize: 11, color: colors.textPrimary)),
+                      backgroundColor: colors.champagne.withValues(alpha: 0.1),
+                      side: BorderSide(color: colors.champagne.withValues(alpha: 0.35)),
+                      onPressed: () => _applyFilter(preset),
+                    ),
+                  ),
+                for (final f in _savedFilters)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: InputChip(
+                      avatar: Icon(Icons.bookmark_rounded, size: 13, color: colors.primary),
+                      label: Text(f.name, style: TextStyle(fontSize: 11, color: colors.textPrimary)),
+                      backgroundColor: colors.primary.withValues(alpha: 0.08),
+                      side: BorderSide(color: colors.primary.withValues(alpha: 0.3)),
+                      onPressed: () => _applyFilter(f),
+                      onDeleted: () => _deleteSavedFilter(f),
+                      deleteIconColor: colors.textSecondary,
+                    ),
+                  ),
+                if (_hasActiveFilter)
+                  ActionChip(
+                    avatar: Icon(Icons.add_rounded, size: 14, color: colors.textSecondary),
+                    label: Text('Save Filter', style: TextStyle(fontSize: 11, color: colors.textSecondary)),
+                    backgroundColor: colors.elevatedSurface,
+                    side: BorderSide(color: colors.border),
+                    onPressed: _saveCurrentFilter,
+                  ),
+              ],
+            ),
+          ),
+        ),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
@@ -199,6 +313,35 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   static String _fmt(DateTime d) => '${d.day}/${d.month}';
+
+  // Fixed presets always offered, independent of what the doctor has
+  // personally saved - the exact examples from the module spec.
+  static final List<_SavedFilter> _quickPresets = [
+    _SavedFilter(name: 'O- Requests', bloodGroup: 'O-', icon: Icons.bloodtype_outlined),
+    _SavedFilter(name: 'Critical Only', priority: UrgencyLevel.critical, icon: Icons.emergency_outlined),
+    _SavedFilter(name: 'Fulfilled', status: RequestStatus.fulfilled, icon: Icons.check_circle_outline_rounded),
+    _SavedFilter(name: 'Rejected', status: RequestStatus.rejected, icon: Icons.cancel_outlined),
+  ];
+}
+
+/// A saved (or quick-preset) filter combo for the History tab -
+/// status/priority/blood-group only (date range is deliberately left
+/// out of saved filters since "last 30 days" would go stale silently).
+class _SavedFilter {
+  final String name;
+  final String? status;
+  final String? priority;
+  final String? bloodGroup;
+  final IconData icon;
+  _SavedFilter({required this.name, this.status, this.priority, this.bloodGroup, this.icon = Icons.bookmark_rounded});
+
+  Map<String, dynamic> toJson() => {'name': name, 'status': status, 'priority': priority, 'bloodGroup': bloodGroup};
+  factory _SavedFilter.fromJson(Map<String, dynamic> json) => _SavedFilter(
+        name: json['name'] as String? ?? 'Filter',
+        status: json['status'] as String?,
+        priority: json['priority'] as String?,
+        bloodGroup: json['bloodGroup'] as String?,
+      );
 }
 
 /// Compact, deterministic (non-AI) analytics for the currently filtered
