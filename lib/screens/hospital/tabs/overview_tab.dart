@@ -328,7 +328,14 @@ class _QuickStatsRow extends StatelessWidget {
           );
         }
         return SizedBox(
-          height: 92,
+          // #overflow-fix - was 92: too short for icon-badge row (29) +
+          // gap (10) + 24pt bold number (~29) + gap (2) + label line
+          // (~14) + 14px top/bottom container padding (28) = ~112px of
+          // real content, which is what caused the number and the
+          // "DONORS NOTIFIED..." label to render on top of each other
+          // ("overflowed by 29 pixels on the bottom" in the debug
+          // console). 132 leaves headroom for larger system text sizes.
+          height: 132,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: chips.length,
@@ -378,8 +385,16 @@ class _QuickStatChip extends StatelessWidget {
               if (demo) ...[const Spacer(), Icon(Icons.visibility_outlined, size: 12, color: colors.champagne)],
             ],
           ),
-          const SizedBox(height: 10),
-          AnimatedCount(value: data.value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: colors.textPrimary)),
+          const SizedBox(height: 8),
+          // FittedBox so a larger system text-size setting (or a
+          // number that grows another digit) scales the number down
+          // instead of pushing the card taller and overlapping the
+          // label below it - the actual bug in the screenshot.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: AnimatedCount(value: data.value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: colors.textPrimary)),
+          ),
           const SizedBox(height: 2),
           Text(data.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: colors.textSecondary, fontWeight: FontWeight.w600)),
         ],
