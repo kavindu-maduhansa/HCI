@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../request_details_screen.dart';
 import '../pdf_report.dart';
+import '../csv_export.dart';
 import '../../../models/blood_request.dart';
 import '../../../utils/request_status.dart';
 import '../../../theme/app_colors.dart';
@@ -382,6 +383,11 @@ class _HistorySummaryBar extends StatelessWidget {
                 _SummaryStat(label: 'Fulfilment rate', value: '$fulfilmentRate%', color: colors.primary),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Export CSV (current filters)',
+            icon: Icon(Icons.table_chart_outlined, color: colors.primary),
+            onPressed: () => exportRequestsAsCsv(context: context, requests: requests),
           ),
           IconButton(
             tooltip: 'Export PDF (current filters)',
