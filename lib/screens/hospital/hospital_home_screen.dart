@@ -10,8 +10,11 @@ import 'tabs/history_tab.dart';
 import 'alert_center_screen.dart';
 import '../../services/alert_watcher.dart';
 import '../../theme/app_colors.dart';
+import '../../models/blood_request.dart';
+import '../../utils/request_status.dart';
 import '../../widgets/appearance_selector_sheet.dart';
 import '../../widgets/command_palette.dart';
+import '../../widgets/live_pulse_dot.dart';
 
 // Burgundy - the Doctor / Blood Bank module's brand identity color
 // (Obsidian + Burgundy + Champagne + Ivory visual system). Kept as a
@@ -127,45 +130,57 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isWide = constraints.maxWidth >= kWideLayoutBreakpoint;
+      body: Column(
+        children: [
+          // #critical - a persistent, app-wide banner (visible from
+          // every tab, not just Verify) the instant any active request
+          // crosses its urgency-specific critical-attention SLA. This
+          // is deliberately not dismissible - a genuinely critical
+          // situation should not be silence-able by an accidental tap.
+          _CriticalEscalationBanner(onTap: () => setState(() => _tabIndex = 1)),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= kWideLayoutBreakpoint;
 
-          if (!isWide) {
-            return IndexedStack(index: _tabIndex, children: tabs);
-          }
+                if (!isWide) {
+                  return IndexedStack(index: _tabIndex, children: tabs);
+                }
 
-          // Wide (tablet/desktop) layout: navigation rail + larger content area.
-          return Row(
-            children: [
-              NavigationRail(
-                selectedIndex: _tabIndex,
-                onDestinationSelected: (i) => setState(() => _tabIndex = i),
-                backgroundColor: colors.surface,
-                labelType: NavigationRailLabelType.all,
-                selectedIconTheme: IconThemeData(color: colors.primary),
-                unselectedIconTheme: IconThemeData(color: colors.textSecondary),
-                selectedLabelTextStyle: TextStyle(color: colors.primary, fontWeight: FontWeight.bold),
-                unselectedLabelTextStyle: TextStyle(color: colors.textSecondary),
-                destinations: List.generate(
-                  _titles.length,
-                  (i) => NavigationRailDestination(
-                    icon: i == 1 ? const _PendingBadgeIcon() : Icon(_tabIcons[i]),
-                    selectedIcon: i == 1 ? _PendingBadgeIcon(selected: true, color: colors.primary) : Icon(_tabIcons[i], color: colors.primary),
-                    label: Text(_titles[i]),
-                  ),
-                ),
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1100),
-                  child: IndexedStack(index: _tabIndex, children: tabs),
-                ),
-              ),
-            ],
-          );
-        },
+                // Wide (tablet/desktop) layout: navigation rail + larger content area.
+                return Row(
+                  children: [
+                    NavigationRail(
+                      selectedIndex: _tabIndex,
+                      onDestinationSelected: (i) => setState(() => _tabIndex = i),
+                      backgroundColor: colors.surface,
+                      labelType: NavigationRailLabelType.all,
+                      selectedIconTheme: IconThemeData(color: colors.primary),
+                      unselectedIconTheme: IconThemeData(color: colors.textSecondary),
+                      selectedLabelTextStyle: TextStyle(color: colors.primary, fontWeight: FontWeight.bold),
+                      unselectedLabelTextStyle: TextStyle(color: colors.textSecondary),
+                      destinations: List.generate(
+                        _titles.length,
+                        (i) => NavigationRailDestination(
+                          icon: i == 1 ? const _PendingBadgeIcon() : Icon(_tabIcons[i]),
+                          selectedIcon: i == 1 ? _PendingBadgeIcon(selected: true, color: colors.primary) : Icon(_tabIcons[i], color: colors.primary),
+                          label: Text(_titles[i]),
+                        ),
+                      ),
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1100),
+                        child: IndexedStack(index: _tabIndex, children: tabs),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: LayoutBuilder(
         builder: (context, constraints) {
@@ -202,6 +217,77 @@ class _HospitalHomeScreenState extends State<HospitalHomeScreen> {
       ),
         ),
       ),
+    );
+  }
+}
+
+/// #critical - App-wide critical-attention escalation banner. Shows
+/// the count of ACTIVE requests whose [RequestHealth] has crossed
+/// CRITICAL_ATTENTION (the same real waiting-time/urgency/coverage
+/// heuristic used everywhere else in the module - nothing new is
+/// invented here, this just surfaces it globally instead of only on
+/// the Verify tab). Renders nothing when the count is zero.
+class _CriticalEscalationBanner extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CriticalEscalationBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('requests').where('status', whereIn: RequestStatus.activeStatuses).snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? const [];
+        final criticalCount = docs.where((d) {
+          final r = BloodRequest.fromDoc(d);
+          final level = RequestHealth.computeLevel(
+            status: r.status,
+            urgency: r.urgency,
+            createdAt: r.createdAt,
+            unitsNeeded: r.unitsNeeded,
+            unitsConfirmed: r.unitsConfirmed,
+          );
+          return level == RequestHealth.criticalAttention;
+        }).length;
+
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          child: criticalCount == 0
+              ? const SizedBox(width: double.infinity)
+              : Material(
+                  color: colors.critical.withValues(alpha: 0.12),
+                  child: InkWell(
+                    onTap: onTap,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: colors.critical.withValues(alpha: 0.35)))),
+                      child: Row(
+                        children: [
+                          LivePulseDot(color: colors.critical),
+                          const SizedBox(width: 8),
+                          Icon(Icons.emergency_outlined, size: 15, color: colors.critical),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              criticalCount == 1
+                                  ? '1 request needs immediate attention - waiting time has passed the critical threshold.'
+                                  : '$criticalCount requests need immediate attention - waiting time has passed the critical threshold.',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: colors.critical),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text('Review now', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: colors.critical)),
+                          Icon(Icons.chevron_right_rounded, size: 16, color: colors.critical),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+        );
+      },
     );
   }
 }

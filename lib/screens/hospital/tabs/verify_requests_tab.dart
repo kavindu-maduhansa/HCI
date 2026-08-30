@@ -31,8 +31,17 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
   String? _bloodGroupFilter;
   String? _urgencyFilter;
 
+  // #6 - Operations Table view: a dense, sortable desktop-only
+  // alternative to the card list, for staff who prefer to scan a
+  // large queue as rows rather than cards. Off by default; only ever
+  // offered when the viewport is wide enough to render it well.
+  bool _tableView = false;
+  _TableSortColumn _sortColumn = _TableSortColumn.urgency;
+  bool _sortAscending = true;
+
   static const _groups = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
   static const _urgencies = [UrgencyLevel.critical, UrgencyLevel.high, UrgencyLevel.normal];
+  static const _kTableBreakpoint = 900.0;
 
   @override
   void dispose() {
@@ -42,27 +51,60 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => _buildBody(context, constraints.maxWidth >= _kTableBreakpoint),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, bool isWide) {
     final colors = context.colors;
     return Column(
       children: [
         EntranceFadeSlide(
           child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: TextField(
-            controller: _searchController,
-            onChanged: (_) => setState(() {}),
-            style: TextStyle(color: colors.textPrimary),
-            decoration: InputDecoration(
-              hintText: 'Search by patient name or hospital...',
-              hintStyle: TextStyle(color: colors.textSecondary),
-              prefixIcon: Icon(Icons.search_rounded, color: colors.textSecondary),
-              filled: true,
-              fillColor: colors.elevatedSurface,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.border)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.primary, width: 1.6)),
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  style: TextStyle(color: colors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Search by patient name or hospital...',
+                    hintStyle: TextStyle(color: colors.textSecondary),
+                    prefixIcon: Icon(Icons.search_rounded, color: colors.textSecondary),
+                    filled: true,
+                    fillColor: colors.elevatedSurface,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.border)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.border)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colors.primary, width: 1.6)),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              // #6 - Operations Table toggle, desktop only.
+              if (isWide) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: _tableView ? 'Switch to card view' : 'Switch to Operations Table',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => setState(() => _tableView = !_tableView),
+                    child: Container(
+                      height: 48,
+                      width: 48,
+                      decoration: BoxDecoration(
+                        color: _tableView ? colors.primary : colors.elevatedSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _tableView ? colors.primary : colors.border),
+                      ),
+                      child: Icon(Icons.table_rows_outlined, color: _tableView ? Colors.white : colors.textSecondary),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
           ),
         ),
@@ -177,6 +219,24 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
                   ],
                 );
               }
+
+              if (_tableView && isWide) {
+                final sorted = _sortForTable(requests);
+                return _OperationsTable(
+                  requests: sorted,
+                  sortColumn: _sortColumn,
+                  ascending: _sortAscending,
+                  onSort: (col) => setState(() {
+                    if (_sortColumn == col) {
+                      _sortAscending = !_sortAscending;
+                    } else {
+                      _sortColumn = col;
+                      _sortAscending = true;
+                    }
+                  }),
+                );
+              }
+
               return ListView.separated(
                 padding: const EdgeInsets.all(16),
                 itemCount: requests.length + 1,
@@ -194,6 +254,117 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
           ),
         ),
       ],
+    );
+  }
+
+  List<BloodRequest> _sortForTable(List<BloodRequest> requests) {
+    final list = [...requests];
+    int cmp(BloodRequest a, BloodRequest b) {
+      switch (_sortColumn) {
+        case _TableSortColumn.id:
+          return a.id.compareTo(b.id);
+        case _TableSortColumn.patient:
+          return a.patientName.compareTo(b.patientName);
+        case _TableSortColumn.bloodGroup:
+          return a.bloodGroup.compareTo(b.bloodGroup);
+        case _TableSortColumn.units:
+          return a.unitsNeeded.compareTo(b.unitsNeeded);
+        case _TableSortColumn.urgency:
+          return UrgencyLevel.weight(a.urgency).compareTo(UrgencyLevel.weight(b.urgency));
+        case _TableSortColumn.hospital:
+          return a.hospitalName.compareTo(b.hospitalName);
+        case _TableSortColumn.waiting:
+          return WaitingTime.elapsed(a.createdAt).compareTo(WaitingTime.elapsed(b.createdAt));
+        case _TableSortColumn.coverage:
+          final aRatio = a.unitsNeeded == 0 ? 0.0 : a.unitsConfirmed / a.unitsNeeded;
+          final bRatio = b.unitsNeeded == 0 ? 0.0 : b.unitsConfirmed / b.unitsNeeded;
+          return aRatio.compareTo(bRatio);
+        case _TableSortColumn.status:
+          return a.status.compareTo(b.status);
+      }
+    }
+
+    list.sort(cmp);
+    if (!_sortAscending) return list.reversed.toList();
+    return list;
+  }
+}
+
+enum _TableSortColumn { id, patient, bloodGroup, units, urgency, hospital, waiting, coverage, status }
+
+/// #6 - Operations Table: a dense, sortable data-grid alternative to
+/// the card list, for desktop staff who prefer scanning rows. Every
+/// column is real request data; clicking a row opens the same Request
+/// Details screen the card view uses. Wrapped in horizontal scroll so
+/// it degrades gracefully rather than overflowing on a merely-wide
+/// (not ultra-wide) desktop window.
+class _OperationsTable extends StatelessWidget {
+  final List<BloodRequest> requests;
+  final _TableSortColumn sortColumn;
+  final bool ascending;
+  final ValueChanged<_TableSortColumn> onSort;
+  const _OperationsTable({required this.requests, required this.sortColumn, required this.ascending, required this.onSort});
+
+  int? _colIndex(_TableSortColumn col) => _TableSortColumn.values.indexOf(col);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SingleChildScrollView(
+            child: DataTable(
+              sortColumnIndex: _colIndex(sortColumn),
+              sortAscending: ascending,
+              headingRowColor: WidgetStateProperty.all(colors.elevatedSurface),
+              dataRowMinHeight: 48,
+              dataRowMaxHeight: 56,
+              columns: [
+                DataColumn(label: Text('Request ID', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.id)),
+                DataColumn(label: Text('Patient', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.patient)),
+                DataColumn(label: Text('Group', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.bloodGroup)),
+                DataColumn(label: Text('Units', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), numeric: true, onSort: (_, _) => onSort(_TableSortColumn.units)),
+                DataColumn(label: Text('Urgency', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.urgency)),
+                DataColumn(label: Text('Hospital', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.hospital)),
+                DataColumn(label: Text('Waiting', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.waiting)),
+                DataColumn(label: Text('Coverage', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.coverage)),
+                DataColumn(label: Text('Status', style: TextStyle(color: colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)), onSort: (_, _) => onSort(_TableSortColumn.status)),
+              ],
+              rows: requests.map((r) {
+                final urgencyColor = UrgencyLevel.color(r.urgency);
+                final coveragePct = r.unitsNeeded == 0 ? 0 : ((r.unitsConfirmed / r.unitsNeeded) * 100).round();
+                return DataRow(
+                  onSelectChanged: (_) => Navigator.push(context, MaterialPageRoute(builder: (_) => RequestDetailsScreen(requestId: r.id))),
+                  cells: [
+                    DataCell(Text(r.id.substring(0, r.id.length < 8 ? r.id.length : 8).toUpperCase(), style: TextStyle(fontSize: 11.5, color: colors.textSecondary, fontFamily: 'monospace'))),
+                    DataCell(Text(r.patientName, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.textPrimary))),
+                    DataCell(Text(r.bloodGroup, style: TextStyle(fontSize: 12.5, color: colors.critical, fontWeight: FontWeight.bold))),
+                    DataCell(Text('${r.unitsNeeded}', style: TextStyle(fontSize: 12.5, color: colors.textPrimary))),
+                    DataCell(Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: urgencyColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                      child: Text(r.urgency, style: TextStyle(fontSize: 11, color: urgencyColor, fontWeight: FontWeight.bold)),
+                    )),
+                    DataCell(Text(r.hospitalName, style: TextStyle(fontSize: 12.5, color: colors.textPrimary))),
+                    DataCell(Text(WaitingTime.format(r.createdAt), style: TextStyle(fontSize: 12, color: colors.textSecondary))),
+                    DataCell(Text('$coveragePct%', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: coveragePct >= 100 ? colors.success : colors.textPrimary))),
+                    DataCell(Text(RequestStatus.label(r.status), style: TextStyle(fontSize: 11.5, color: RequestStatus.color(r.status), fontWeight: FontWeight.w600))),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
