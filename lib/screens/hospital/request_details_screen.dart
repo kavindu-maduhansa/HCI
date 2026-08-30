@@ -287,6 +287,8 @@ class _RequestDetailsScreenState extends State<RequestDetailsScreen> {
                     const SizedBox(height: 16),
                     staggered(_VerifyActionsBar(
                       enabled: _checklistComplete,
+                      request: request,
+                      currentDoctorId: _doctorId,
                       onVerify: () => _safeRun(() => _service.verifyRequest(request, doctorId: _doctorId, doctorName: _doctorName)),
                       onReject: () => _showRejectDialog(request),
                     )),
@@ -506,40 +508,87 @@ class _ChecklistCard extends StatelessWidget {
   }
 }
 
+/// #two-person-verification - for a Critical request, the first tap of
+/// "Verify Request" only records that staff member's co-sign (status
+/// stays pending); a genuinely different staff member has to tap it a
+/// second time to actually move the request to `verified`. The same
+/// doctor cannot approve their own first co-sign. Every other urgency
+/// level keeps the original single-tap flow.
 class _VerifyActionsBar extends StatelessWidget {
   final bool enabled;
+  final BloodRequest request;
+  final String currentDoctorId;
   final VoidCallback onVerify;
   final VoidCallback onReject;
-  const _VerifyActionsBar({required this.enabled, required this.onVerify, required this.onReject});
+  const _VerifyActionsBar({required this.enabled, required this.request, required this.currentDoctorId, required this.onVerify, required this.onReject});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Row(
+    final awaitingSecond = request.awaitingSecondApproval;
+    final isSelfApprover = awaitingSecond && request.firstApproverId == currentDoctorId;
+    final canVerifyNow = enabled && !isSelfApprover;
+
+    final String verifyLabel;
+    if (awaitingSecond) {
+      verifyLabel = isSelfApprover ? 'Waiting for 2nd staff member' : 'Confirm 2nd Approval & Verify';
+    } else if (request.urgency == 'Critical') {
+      verifyLabel = 'Give 1st Approval';
+    } else {
+      verifyLabel = 'Verify Request';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onReject,
-            icon: Icon(Icons.close_rounded, color: colors.critical),
-            label: Text('Reject', style: TextStyle(color: colors.critical)),
-            style: OutlinedButton.styleFrom(side: BorderSide(color: colors.critical), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          flex: 2,
-          child: ElevatedButton.icon(
-            onPressed: enabled ? onVerify : null,
-            icon: const Icon(Icons.verified_rounded),
-            label: const Text('Verify Request'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: colors.primary,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: colors.border,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        if (awaitingSecond)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(color: colors.warning.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10), border: Border.all(color: colors.warning.withValues(alpha: 0.3))),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.gpp_maybe_outlined, size: 16, color: colors.warning),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isSelfApprover
+                        ? 'You gave the first approval on this critical request. A different staff member must confirm before it is verified.'
+                        : '${request.firstApproverName ?? 'A staff member'} gave the first approval. Confirming below records your name as the second, independent approver.',
+                    style: TextStyle(fontSize: 12, color: colors.textPrimary),
+                  ),
+                ),
+              ],
             ),
           ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: onReject,
+                icon: Icon(Icons.close_rounded, color: colors.critical),
+                label: Text('Reject', style: TextStyle(color: colors.critical)),
+                style: OutlinedButton.styleFrom(side: BorderSide(color: colors.critical), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: ElevatedButton.icon(
+                onPressed: canVerifyNow ? onVerify : null,
+                icon: Icon(awaitingSecond ? Icons.how_to_reg_rounded : Icons.verified_rounded),
+                label: Text(verifyLabel),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: colors.border,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );

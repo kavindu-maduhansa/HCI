@@ -76,8 +76,53 @@ class RequestService {
   // ---------------------------------------------------------------
   // FR08 - verification workflow
   // ---------------------------------------------------------------
+  // #two-person-verification - Critical urgency requests require a
+  // second, different staff member to co-sign before the request
+  // actually transitions to `verified`. Every other urgency level
+  // keeps the original single-tap flow, unchanged.
   Future<void> verifyRequest(BloodRequest request, {required String doctorId, required String doctorName}) async {
     if (!RequestStatus.isValidTransition(request.status, RequestStatus.verified)) return;
+
+    if (request.urgency == UrgencyLevel.critical) {
+      if (request.firstApproverId == null) {
+        // First co-sign only - status stays pending until a second,
+        // different staff member confirms.
+        await requestRef(request.id).update({
+          'firstApproverId': doctorId,
+          'firstApproverName': doctorName,
+          'firstApprovedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        await logAudit(
+          action: 'request_first_approval',
+          requestId: request.id,
+          performedBy: doctorId,
+          performedByName: doctorName,
+          details: {'note': 'Critical request - awaiting a second, independent staff member to co-sign.'},
+        );
+        return;
+      }
+      if (request.firstApproverId == doctorId) {
+        throw StateError('You already gave the first approval on this critical request. A different staff member must confirm it.');
+      }
+      await requestRef(request.id).update({
+        'status': RequestStatus.verified,
+        'verifiedBy': doctorName,
+        'verifiedAt': FieldValue.serverTimestamp(),
+        'secondApproverId': doctorId,
+        'secondApproverName': doctorName,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await logAudit(
+        action: 'request_verified',
+        requestId: request.id,
+        performedBy: doctorId,
+        performedByName: doctorName,
+        details: {'firstApprover': request.firstApproverName, 'secondApprover': doctorName},
+      );
+      return;
+    }
+
     await requestRef(request.id).update({
       'status': RequestStatus.verified,
       'verifiedBy': doctorName,

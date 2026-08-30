@@ -582,6 +582,25 @@ class _PendingRequestCard extends StatelessWidget {
                 Flexible(child: Align(alignment: Alignment.centerRight, child: RequestHealthBadge(request: request, showWaitingTime: true))),
               ],
             ),
+            // #two-person-verification - a critical request with one
+            // co-sign already on it needs a visibly different signal in
+            // the queue, so staff know one tap here finishes the second
+            // approval instead of starting from zero.
+            if (request.awaitingSecondApproval) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(color: colors.warning.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.gpp_maybe_outlined, size: 12, color: colors.warning),
+                    const SizedBox(width: 4),
+                    Text('1st approval by ${request.firstApproverName ?? 'staff'} - needs 2nd', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: colors.warning)),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             Row(
               children: [

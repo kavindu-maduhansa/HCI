@@ -35,6 +35,15 @@ class BloodRequest {
   final int donorsAcceptedCount;
   final List<String> pinnedBy;
 
+  // #two-person-verification - Critical urgency requests require a
+  // second, different staff member to co-sign before the request
+  // actually moves to `verified`. These three fields record who gave
+  // the first approval and when; they stay null for every other
+  // urgency level and for requests verified before this feature.
+  final String? firstApproverId;
+  final String? firstApproverName;
+  final DateTime? firstApprovedAt;
+
   const BloodRequest({
     required this.id,
     required this.patientName,
@@ -56,11 +65,19 @@ class BloodRequest {
     this.donorsNotifiedCount = 0,
     this.donorsAcceptedCount = 0,
     this.pinnedBy = const [],
+    this.firstApproverId,
+    this.firstApproverName,
+    this.firstApprovedAt,
   });
 
   int get unitsRemaining => (unitsNeeded - unitsConfirmed).clamp(0, unitsNeeded);
 
   bool isPinnedBy(String? uid) => uid != null && pinnedBy.contains(uid);
+
+  /// True only for a Critical-urgency request that has its first
+  /// co-sign recorded but has not yet been fully verified by a second,
+  /// different staff member.
+  bool get awaitingSecondApproval => urgency == 'Critical' && status == 'pending' && firstApproverId != null;
 
   factory BloodRequest.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? <String, dynamic>{};
@@ -87,6 +104,9 @@ class BloodRequest {
       donorsNotifiedCount: (data['donorsNotifiedCount'] as num?)?.toInt() ?? 0,
       donorsAcceptedCount: (data['donorsAcceptedCount'] as num?)?.toInt() ?? 0,
       pinnedBy: (data['pinnedBy'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      firstApproverId: data['firstApproverId'] as String?,
+      firstApproverName: data['firstApproverName'] as String?,
+      firstApprovedAt: (data['firstApprovedAt'] as Timestamp?)?.toDate(),
     );
   }
 }
