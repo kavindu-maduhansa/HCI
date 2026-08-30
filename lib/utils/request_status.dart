@@ -251,4 +251,42 @@ class RequestHealth {
         return const Color(0xFF2E7D32);
     }
   }
+
+  /// #9 - "WHY" explainer: the same application-level factors
+  /// [computeLevel] used, spelled out in plain language, so a doctor
+  /// never has to trust the badge blindly. Every line is derived from
+  /// a real field on the request - nothing here is invented.
+  static List<String> reasons({
+    required String status,
+    required String urgency,
+    required DateTime? createdAt,
+    required int unitsNeeded,
+    required int unitsConfirmed,
+  }) {
+    final level = computeLevel(status: status, urgency: urgency, createdAt: createdAt, unitsNeeded: unitsNeeded, unitsConfirmed: unitsConfirmed);
+    final thresholds = _thresholdsMinutes[urgency] ?? _thresholdsMinutes[UrgencyLevel.normal]!;
+    final coveragePct = unitsNeeded <= 0 ? 0 : ((unitsConfirmed / unitsNeeded) * 100).clamp(0, 100).round();
+    final waitingLabel = WaitingTime.format(createdAt);
+
+    if ([RequestStatus.fulfilled, RequestStatus.rejected, RequestStatus.expired].contains(status)) {
+      return ['Request is closed (${RequestStatus.label(status)}) - no longer tracked for waiting time.'];
+    }
+    if (unitsNeeded > 0 && unitsConfirmed >= unitsNeeded) {
+      return ['All $unitsNeeded unit(s) already confirmed by donors - fully covered.'];
+    }
+
+    final reasons = <String>[
+      'Waiting time: $waitingLabel since the request was created.',
+      '$urgency urgency SLA: attention at ${thresholds[0]}m, critical at ${thresholds[1]}m.',
+      '$unitsConfirmed of $unitsNeeded unit(s) confirmed ($coveragePct% donor coverage).',
+    ];
+    if (level == criticalAttention) {
+      reasons.add('Waiting time has passed the critical threshold for this urgency level.');
+    } else if (level == needsAttention) {
+      reasons.add('Waiting time has passed the attention threshold for this urgency level.');
+    } else {
+      reasons.add('Still within the expected SLA window for this urgency level.');
+    }
+    return reasons;
+  }
 }

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../utils/request_status.dart';
 import '../../../theme/app_colors.dart';
+import '../../../models/blood_request.dart';
 import '../../../services/request_service.dart';
 import '../../../widgets/common_states.dart';
 import '../../../widgets/entrance_fade_slide.dart';
@@ -614,10 +615,12 @@ class _DonorCard extends StatelessWidget {
     );
   }
 
-  /// #16 - Donor mini profile. Shown when browsing (not select mode).
+  /// #8 - Donor Profile. Shown when browsing (not select mode).
   /// Deliberately omits phone number and any other sensitive contact
   /// detail - matching/coordination purposes never require exposing
-  /// that here.
+  /// that here. The donation-history section below is built entirely
+  /// from this donor's real `responses` subcollection entries across
+  /// every request they were ever notified on - nothing invented.
   void _showDonorProfile(BuildContext context, AppColors colors) {
     final name = data['fullName'] as String? ?? 'Donor';
     final group = data['bloodGroup'] as String? ?? '-';
@@ -631,13 +634,25 @@ class _DonorCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: colors.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.72,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (context, scrollController) => ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(color: colors.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
             Row(
               children: [
                 CircleAvatar(
@@ -651,6 +666,7 @@ class _DonorCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(name, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: colors.textPrimary)),
+                      Text('Donor ID ${donorId.substring(0, donorId.length < 8 ? donorId.length : 8).toUpperCase()}', style: TextStyle(fontSize: 11, color: colors.textSecondary)),
                       Text(location?.isNotEmpty == true ? location! : 'Location not set', style: TextStyle(fontSize: 12.5, color: colors.textSecondary)),
                     ],
                   ),
@@ -666,6 +682,59 @@ class _DonorCard extends StatelessWidget {
                 _Tag(label: 'Available', ok: available),
                 _Tag(label: 'Eligible', ok: eligible, hint: eligible ? null : 'in ${daysLeft}d'),
               ],
+            ),
+            const SizedBox(height: 8),
+            _InfoLine(label: 'Last Donation', value: lastDonation == null ? 'Not on record' : _formatDate(lastDonation)),
+            _InfoLine(label: 'Next Eligible', value: eligible ? 'Eligible now' : (daysLeft != null ? _formatDate(DateTime.now().add(Duration(days: daysLeft))) : '—')),
+            const SizedBox(height: 20),
+            Text('DONATION HISTORY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.6, color: colors.textSecondary)),
+            const SizedBox(height: 10),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collectionGroup('responses').where('donorId', isEqualTo: donorId).snapshots(),
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary)));
+                }
+                final records = snap.data!.docs.map(DonorResponseRecord.fromDoc).toList()
+                  ..sort((a, b) => (b.respondedAt ?? b.notifiedAt ?? DateTime(2000)).compareTo(a.respondedAt ?? a.notifiedAt ?? DateTime(2000)));
+
+                if (records.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No response history yet - this donor has not been notified for a request.', style: TextStyle(fontSize: 12.5, color: colors.textSecondary)),
+                  );
+                }
+
+                final completed = records.where((r) => r.status == 'completed').length;
+                final declined = records.where((r) => r.status == 'declined').length;
+                final resolved = completed + declined;
+                final responseRate = records.isEmpty ? 0 : (records.where((r) => r.status != 'notified').length / records.length * 100).round();
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: _MiniStat(label: 'Completed', value: '$completed', color: colors.success)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _MiniStat(label: 'Declined', value: '$declined', color: colors.critical)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _MiniStat(label: 'Response Rate', value: '$responseRate%', color: colors.primary)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _MiniStat(
+                            label: 'Reliability',
+                            value: resolved == 0 ? '—' : '${(completed / resolved * 100).round()}%',
+                            color: resolved == 0 ? colors.textSecondary : (completed / resolved >= 0.8 ? colors.success : colors.warning),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    for (final r in records.take(8)) _DonationHistoryRow(record: r),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 18),
             SizedBox(
@@ -684,6 +753,12 @@ class _DonorCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static String _formatDate(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final local = dt.toLocal();
+    return '${local.day} ${months[local.month - 1]} ${local.year}';
   }
 
   void _showVerifyDialog(BuildContext context, AppColors colors) {
@@ -988,6 +1063,92 @@ class _ReliabilityBadge extends StatelessWidget {
           Icon(Icons.workspace_premium_outlined, size: 11, color: color),
           const SizedBox(width: 3),
           Text('$pct% reliable ($completed/$total)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  final String label;
+  final String value;
+  const _InfoLine({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Text('$label: ', style: TextStyle(fontSize: 12, color: colors.textSecondary)),
+          Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colors.textPrimary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _MiniStat({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+      child: Column(
+        children: [
+          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 2),
+          Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 9.5, color: colors.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single entry in a donor's donation-history mini timeline - one
+/// real `responses` subcollection document, nothing synthesized.
+class _DonationHistoryRow extends StatelessWidget {
+  final DonorResponseRecord record;
+  const _DonationHistoryRow({required this.record});
+
+  Color _color(AppColors colors) {
+    switch (record.status) {
+      case 'completed':
+        return colors.success;
+      case 'declined':
+        return colors.critical;
+      case 'accepted':
+        return colors.primary;
+      default:
+        return colors.warning;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = _color(colors);
+    final date = record.respondedAt ?? record.notifiedAt;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              record.status[0].toUpperCase() + record.status.substring(1) + (record.unitsPledged > 0 && record.status != 'notified' ? ' · ${record.unitsPledged} unit(s)' : ''),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.textPrimary),
+            ),
+          ),
+          Text(date == null ? '—' : _DonorCard._formatDate(date), style: TextStyle(fontSize: 11, color: colors.textSecondary)),
         ],
       ),
     );
