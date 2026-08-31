@@ -238,6 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
                             enabled: !_isLoading,
+                            style: const TextStyle(color: Color(0xFF1F2937)),
                             decoration: InputDecoration(
                               labelText: 'Email Address',
                               hintText: 'name@example.com',
@@ -290,6 +291,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             textInputAction: TextInputAction.done,
                             enabled: !_isLoading,
                             onFieldSubmitted: (_) => _isLoading ? null : _handleLogin(),
+                            style: const TextStyle(color: Color(0xFF1F2937)),
                             decoration: InputDecoration(
                               labelText: 'Password',
                               hintText: 'Enter your password',
