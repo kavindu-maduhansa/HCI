@@ -95,10 +95,43 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
             ),
           ),
         EntranceFadeSlide(
-          child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Column(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: colors.border),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 14, offset: const Offset(0, 4)),
+              ],
+            ),
+            child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: colors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                    child: Icon(Icons.volunteer_activism_rounded, size: 18, color: colors.primary),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Find Donors', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: colors.textPrimary)),
+                        Text(
+                          widget.selectMode ? 'Ranked by application match score' : 'Search the verified donor pool',
+                          style: TextStyle(fontSize: 11, color: colors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
@@ -363,17 +396,25 @@ class _DonorListStream extends StatelessWidget {
               return Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                    child: Row(
-                      children: [
-                        Expanded(child: _DonorStatChip(label: 'Found', value: donors.length, color: colors.textPrimary)),
-                        const SizedBox(width: 8),
-                        Expanded(child: _DonorStatChip(label: 'Verified', value: verifiedCount, color: colors.success)),
-                        const SizedBox(width: 8),
-                        Expanded(child: _DonorStatChip(label: 'Available', value: availableCount, color: colors.primary)),
-                        const SizedBox(width: 8),
-                        Expanded(child: _DonorStatChip(label: 'Eligible', value: eligibleCount, color: colors.warning)),
-                      ],
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: colors.elevatedSurface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: colors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(child: _DonorStatChip(label: 'Found', value: donors.length, color: colors.textPrimary, icon: Icons.groups_rounded)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _DonorStatChip(label: 'Verified', value: verifiedCount, color: colors.success, icon: Icons.verified_rounded)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _DonorStatChip(label: 'Available', value: availableCount, color: colors.primary, icon: Icons.event_available_rounded)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _DonorStatChip(label: 'Eligible', value: eligibleCount, color: colors.warning, icon: Icons.health_and_safety_rounded)),
+                        ],
+                      ),
                     ),
                   ),
                   Expanded(
@@ -680,8 +721,11 @@ class _DonorCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: colors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: tier != null ? tier.color(colors).withValues(alpha: 0.5) : colors.border),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: tier != null ? tier.color(colors).withValues(alpha: 0.5) : colors.border, width: tier != null ? 1.4 : 1),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 3)),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -706,10 +750,17 @@ class _DonorCard extends StatelessWidget {
               ),
             Row(
               children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: colors.critical.withValues(alpha: 0.1),
-                  child: Text(group, style: TextStyle(color: colors.critical, fontWeight: FontWeight.bold, fontSize: 13)),
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: tier != null ? tier.color(colors) : colors.critical.withValues(alpha: 0.3), width: tier != null ? 2 : 1.4),
+                  ),
+                  child: CircleAvatar(
+                    radius: 22,
+                    backgroundColor: colors.critical.withValues(alpha: 0.1),
+                    child: Text(group, style: TextStyle(color: colors.critical, fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -750,7 +801,9 @@ class _DonorCard extends StatelessWidget {
                   Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            Divider(height: 1, color: colors.border.withValues(alpha: 0.6)),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -1153,22 +1206,28 @@ class _DonorStatChip extends StatelessWidget {
   final String label;
   final int value;
   final Color color;
-  const _DonorStatChip({required this.label, required this.value, required this.color});
+  final IconData? icon;
+  const _DonorStatChip({required this.label, required this.value, required this.color, this.icon});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Column(
         children: [
-          Text('$value', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color)),
-          Text(label, style: TextStyle(fontSize: 10, color: colors.textSecondary)),
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: color),
+            const SizedBox(height: 3),
+          ],
+          Text('$value', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 1),
+          Text(label, style: TextStyle(fontSize: 9.5, color: colors.textSecondary, fontWeight: FontWeight.w600)),
         ],
       ),
     );
