@@ -1581,6 +1581,7 @@ class _BloodDemandCard extends StatelessWidget {
 
   static const _groups = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
   static const _demoDemand = {'O-': 14, 'A+': 9, 'B+': 6, 'AB+': 3, 'O+': 5, 'A-': 2, 'B-': 1, 'AB-': 0};
+  static const _demoRequestCounts = {'O-': 5, 'A+': 4, 'B+': 3, 'AB+': 2, 'O+': 3, 'A-': 1, 'B-': 1, 'AB-': 0};
   static const _demoCritical = {'O-', 'B+'};
 
   @override
@@ -1590,16 +1591,21 @@ class _BloodDemandCard extends StatelessWidget {
     final isDemo = active.isEmpty;
 
     Map<String, int> demand;
+    Map<String, int> requestCounts;
     Set<String> criticalGroups;
     if (isDemo) {
       demand = _demoDemand;
+      requestCounts = _demoRequestCounts;
       criticalGroups = _demoCritical;
     } else {
       demand = {for (final g in _groups) g: 0};
+      requestCounts = {for (final g in _groups) g: 0};
       criticalGroups = {};
       for (final r in active) {
+        if (r.unitsRemaining <= 0) continue;
         demand[r.bloodGroup] = (demand[r.bloodGroup] ?? 0) + r.unitsRemaining;
-        if (r.urgency == UrgencyLevel.critical && r.unitsRemaining > 0) criticalGroups.add(r.bloodGroup);
+        requestCounts[r.bloodGroup] = (requestCounts[r.bloodGroup] ?? 0) + 1;
+        if (r.urgency == UrgencyLevel.critical) criticalGroups.add(r.bloodGroup);
       }
     }
     final sortedGroups = _groups.toList()..sort((a, b) => (demand[b] ?? 0).compareTo(demand[a] ?? 0));
@@ -1622,6 +1628,7 @@ class _BloodDemandCard extends StatelessWidget {
           const SizedBox(height: 14),
           ...sortedGroups.map((g) {
             final value = demand[g] ?? 0;
+            final requests = requestCounts[g] ?? 0;
             final isCritical = criticalGroups.contains(g);
             final fraction = maxDemand == 0 ? 0.0 : value / maxDemand;
             final barColor = isCritical ? colors.critical : colors.primary;
@@ -1645,7 +1652,14 @@ class _BloodDemandCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  SizedBox(width: 24, child: Text('$value', style: TextStyle(fontSize: 11.5, color: colors.textSecondary))),
+                  SizedBox(
+                    width: 66,
+                    child: Text(
+                      '$value units · $requests req',
+                      style: TextStyle(fontSize: 10, color: colors.textSecondary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   if (isCritical) ...[const SizedBox(width: 4), Icon(Icons.priority_high_rounded, size: 12, color: colors.critical)],
                 ],
               ),
