@@ -36,8 +36,8 @@ void main() {
         home: DonorHomeScreen(),
       ),
     );
-    expect(find.text('Donor Home'), findsOneWidget);
-    expect(find.text('Donor Area'), findsOneWidget);
+    expect(find.text('Donor Dashboard'), findsOneWidget);
+    expect(find.text('Your Donation Profile'), findsOneWidget);
   });
 
   testWidgets('RecipientHomeScreen smoke test', (WidgetTester tester) async {
