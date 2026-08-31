@@ -1350,19 +1350,32 @@ class _LiveActivityFeedSection extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (isDemo)
-            ..._demoFeed.map((item) => _ActivityRow(icon: _iconFor(item.label), label: item.label, timeLabel: '${item.minutesAgo} min ago'))
+            for (int i = 0; i < _demoFeed.length; i++)
+              EntranceFadeSlide(
+                delay: Duration(milliseconds: 40 * i),
+                child: _ActivityRow(icon: _iconFor(_demoFeed[i].label), label: _demoFeed[i].label, timeLabel: '${_demoFeed[i].minutesAgo} min ago'),
+              )
           else
-            ...auditDocs.map((doc) {
-              final data = doc.data();
-              final action = data['action'] as String? ?? '';
-              final actor = data['performedByName'] as String? ?? '';
-              final ts = (data['timestamp'] as Timestamp?)?.toDate();
-              return _ActivityRow(
-                icon: _iconFor(action),
-                label: '${_actionLabel(action)}${actor.isNotEmpty ? ' — $actor' : ''}',
-                timeLabel: ts == null ? 'just now' : _relativeTime(ts),
-              );
-            }),
+            for (int i = 0; i < auditDocs.length; i++)
+              Builder(builder: (context) {
+                final data = auditDocs[i].data();
+                final action = data['action'] as String? ?? '';
+                final actor = data['performedByName'] as String? ?? '';
+                final ts = (data['timestamp'] as Timestamp?)?.toDate();
+                // #live-activity-animation - each row fades/slides in with
+                // a small stagger so new items landing at the top of this
+                // real-time feed (it's ordered newest-first) read as
+                // arriving, not just appearing - subtle motion, not a
+                // flashy full-page reflow.
+                return EntranceFadeSlide(
+                  delay: Duration(milliseconds: 40 * i.clamp(0, 12)),
+                  child: _ActivityRow(
+                    icon: _iconFor(action),
+                    label: '${_actionLabel(action)}${actor.isNotEmpty ? ' — $actor' : ''}',
+                    timeLabel: ts == null ? 'just now' : _relativeTime(ts),
+                  ),
+                );
+              }),
         ],
       ),
     );
