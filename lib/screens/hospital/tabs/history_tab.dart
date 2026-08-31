@@ -63,10 +63,19 @@ class _HistoryTabState extends State<HistoryTab> {
   static const _pageSize = 20;
   int _visibleCount = _pageSize;
 
+  // #perf - created once instead of calling `.snapshots()` inline in
+  // build(). The search field's onChanged calls setState on every
+  // keystroke, so an inline `stream: ....snapshots()` expression in
+  // build() would rebuild (and force Firestore to resubscribe) this
+  // query on every single keystroke instead of only when the actual
+  // status filter changes.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _requestsStream;
+
   @override
   void initState() {
     super.initState();
     _loadSavedFilters();
+    _requestsStream = FirebaseFirestore.instance.collection('requests').where('status', whereIn: RequestStatus.historyStatuses).snapshots();
   }
 
   @override
@@ -297,10 +306,7 @@ class _HistoryTabState extends State<HistoryTab> {
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('requests')
-                .where('status', whereIn: RequestStatus.historyStatuses)
-                .snapshots(),
+            stream: _requestsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return ErrorStateView(message: 'Unable to load request history right now.\n${snapshot.error}');

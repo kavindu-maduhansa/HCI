@@ -53,10 +53,19 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
   static const _savedFiltersKey = 'verify_saved_filters_v1';
   List<_SavedVerifyFilter> _savedFilters = [];
 
+  // #perf - created once instead of calling `.snapshots()` inline in
+  // build(). The search field's onChanged calls setState on every
+  // keystroke, so an inline `stream: ....snapshots()` expression in
+  // build() would rebuild (and force Firestore to resubscribe) this
+  // query on every single keystroke instead of only when the queue
+  // itself actually changes.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _requestsStream;
+
   @override
   void initState() {
     super.initState();
     _loadSavedFilters();
+    _requestsStream = FirebaseFirestore.instance.collection('requests').where('status', isEqualTo: RequestStatus.pending).snapshots();
   }
 
   @override
@@ -272,10 +281,7 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
             // already-narrowed (status == pending) result set, so this
             // screen works without anyone needing to create an index in
             // the Firebase console.
-            stream: FirebaseFirestore.instance
-                .collection('requests')
-                .where('status', isEqualTo: RequestStatus.pending)
-                .snapshots(),
+            stream: _requestsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return ErrorStateView(message: 'Unable to load requests right now.\n${snapshot.error}');

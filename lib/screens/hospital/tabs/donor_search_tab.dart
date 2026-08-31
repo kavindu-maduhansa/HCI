@@ -72,10 +72,23 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
       ? BloodCompatibility.compatibleDonorGroups(widget.initialBloodGroupFilter!)
       : null;
 
+  // #perf - created once instead of calling `.snapshots()` inline in
+  // build(). The search field's onChanged calls setState on every
+  // keystroke, and build() runs again each time - an inline
+  // `stream: ....snapshots()` expression would construct a brand new
+  // Stream (and force Firestore to resubscribe) on every single
+  // keystroke, which is especially costly for the collectionGroup
+  // read below (it scans every request's responses subcollection).
+  // Same fix already applied to the Command Palette's search.
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _reliabilityStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _donorsStream;
+
   @override
   void initState() {
     super.initState();
     if (!widget.selectMode) _sortMode = _SortMode.recentlyAvailable;
+    _reliabilityStream = FirebaseFirestore.instance.collectionGroup('responses').snapshots();
+    _donorsStream = FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Donor').snapshots();
   }
 
   @override
@@ -286,7 +299,7 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
           // Donors with zero resolved responses get no score at all
           // (shown as "New donor" instead of a fabricated number).
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collectionGroup('responses').snapshots(),
+            stream: _reliabilityStream,
             builder: (context, reliabilitySnap) {
               final reliability = <String, (int completed, int declined)>{};
               if (!reliabilitySnap.hasError) {
@@ -301,6 +314,7 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
                 }
               }
               return _DonorListStream(
+                donorsStream: _donorsStream,
                 bloodGroupFilter: _bloodGroupFilter,
                 compatibleGroups: compatibleGroups,
                 onlyVerified: _onlyVerified,
@@ -346,6 +360,7 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
 /// logic) stays exactly as it was, just now also receiving the
 /// donor-reliability map computed by its parent.
 class _DonorListStream extends StatelessWidget {
+  final Stream<QuerySnapshot<Map<String, dynamic>>> donorsStream;
   final String? bloodGroupFilter;
   final List<String>? compatibleGroups;
   final bool onlyVerified;
@@ -361,6 +376,7 @@ class _DonorListStream extends StatelessWidget {
   final void Function(_CompareEntry entry) onToggleCompare;
 
   const _DonorListStream({
+    required this.donorsStream,
     required this.bloodGroupFilter,
     required this.compatibleGroups,
     required this.onlyVerified,
@@ -387,7 +403,7 @@ class _DonorListStream extends StatelessWidget {
     final _sortMode = sortMode;
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'Donor').snapshots(),
+            stream: donorsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return ErrorStateView(message: 'Unable to load donors right now.\n${snapshot.error}');
