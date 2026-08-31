@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'blood_request_details_screen.dart';
 
 /// Screen displaying active emergency blood requests for donors in real time.
 class EmergencyRequestsScreen extends StatefulWidget {
@@ -13,7 +14,7 @@ class EmergencyRequestsScreen extends StatefulWidget {
 
   /// Formats date string from Timestamp, DateTime, String, int, or null safely.
   static String formatRequestDate(dynamic value) {
-    if (value == null) return 'Not specified';
+    if (value == null) return 'Date not specified';
 
     DateTime? date;
     if (value is Timestamp) {
@@ -30,7 +31,7 @@ class EmergencyRequestsScreen extends StatefulWidget {
       }
     }
 
-    if (date == null) return 'Not specified';
+    if (date == null) return 'Date not specified';
 
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -147,29 +148,63 @@ class _EmergencyRequestsScreenState extends State<EmergencyRequestsScreen> {
     });
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _getRequestsStream() {
-    return FirebaseFirestore.instance.collection('blood_requests').snapshots();
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _getRequestsStream() {
+    try {
+      return FirebaseFirestore.instance.collection('blood_requests').snapshots();
+    } catch (_) {
+      return null;
+    }
   }
 
-  void _showRequestDetails(BuildContext context, Map<String, dynamic> data, String requestId) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _RequestDetailsBottomSheet(
-        data: data,
-        requestId: requestId,
+  void _navigateToDetails(BuildContext context, Map<String, dynamic> data, String requestId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BloodRequestDetailsScreen(
+          requestId: requestId,
+          requestData: data,
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final stream = _getRequestsStream();
+
+    if (stream == null) {
+      return Scaffold(
+        backgroundColor: EmergencyRequestsScreen.surfaceColor,
+        appBar: AppBar(
+          title: const Text(
+            'Emergency Requests',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 19,
+            ),
+          ),
+          backgroundColor: EmergencyRequestsScreen.primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: false,
+        ),
+        body: const Center(
+          child: Text(
+            'Database is not connected.',
+            style: TextStyle(
+              color: EmergencyRequestsScreen.textSecondaryColor,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: EmergencyRequestsScreen.surfaceColor,
       appBar: AppBar(
         title: const Text(
-          'Emergency Blood Requests',
+          'Emergency Requests',
           style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 19,
@@ -183,7 +218,7 @@ class _EmergencyRequestsScreenState extends State<EmergencyRequestsScreen> {
       body: KeyedSubtree(
         key: ValueKey(_streamKey),
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _getRequestsStream(),
+          stream: stream,
           builder: (context, snapshot) {
             // 1. Loading State
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -386,7 +421,7 @@ class _EmergencyRequestsScreenState extends State<EmergencyRequestsScreen> {
                   color: Colors.white,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () => _showRequestDetails(context, data, requestId),
+                    onTap: () => _navigateToDetails(context, data, requestId),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -619,397 +654,4 @@ class UrgencyBadgeConfig {
     required this.borderColor,
     required this.icon,
   });
-}
-
-/// Modal Bottom Sheet displaying comprehensive information about a selected blood request.
-class _RequestDetailsBottomSheet extends StatelessWidget {
-  final Map<String, dynamic> data;
-  final String requestId;
-
-  const _RequestDetailsBottomSheet({
-    required this.data,
-    required this.requestId,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final rawBloodGroup = data['bloodGroup'] as String?;
-    final bloodGroup = (rawBloodGroup != null && rawBloodGroup.trim().isNotEmpty)
-        ? rawBloodGroup.trim()
-        : 'Not specified';
-
-    final rawHospital = data['hospitalName'] as String?;
-    final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
-        ? rawHospital.trim()
-        : 'Unknown hospital';
-
-    final rawLocation = data['location'] as String?;
-    final location = (rawLocation != null && rawLocation.trim().isNotEmpty)
-        ? rawLocation.trim()
-        : 'Unknown location';
-
-    final rawUnits = data['requiredUnits'];
-    final unitsString = rawUnits != null
-        ? '$rawUnits ${rawUnits == 1 ? 'Unit' : 'Units'}'
-        : 'Not specified';
-
-    final rawPatient = data['patientName'] as String?;
-    final patientName = (rawPatient != null && rawPatient.trim().isNotEmpty)
-        ? rawPatient.trim()
-        : 'Not specified';
-
-    final rawContact = data['contactNumber'] as String?;
-    final contactNumber = (rawContact != null && rawContact.trim().isNotEmpty)
-        ? rawContact.trim()
-        : 'Not specified';
-
-    final rawDescription = data['description'] as String?;
-    final description = (rawDescription != null && rawDescription.trim().isNotEmpty)
-        ? rawDescription.trim()
-        : 'No description available';
-
-    final rawStatus = data['status'] as String?;
-    final statusDisplay = (rawStatus != null && rawStatus.trim().isNotEmpty)
-        ? rawStatus.trim()[0].toUpperCase() + rawStatus.trim().substring(1).toLowerCase()
-        : 'Active';
-
-    final urgencyConfig = EmergencyRequestsScreen.getUrgencyConfig(data['urgency']);
-    final createdDateStr = EmergencyRequestsScreen.formatRequestDate(data['createdAt']);
-
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 48),
-      padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset + 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Modal Drag Handle
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5E7EB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Title and Close Icon
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Request Details',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: EmergencyRequestsScreen.textPrimaryColor,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Blood Group & Urgency Highlight Banner
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.15),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: EmergencyRequestsScreen.primaryColor,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        bloodGroup,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            hospitalName,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: EmergencyRequestsScreen.textPrimaryColor,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: urgencyConfig.backgroundColor,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: urgencyConfig.borderColor),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  urgencyConfig.icon,
-                                  size: 12,
-                                  color: urgencyConfig.textColor,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  urgencyConfig.label,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: urgencyConfig.textColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 18),
-
-              // Detail List Items Card
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: EmergencyRequestsScreen.cardBorderColor),
-                ),
-                child: Column(
-                  children: [
-                    _DetailRow(
-                      icon: Icons.location_on_outlined,
-                      label: 'Location',
-                      value: location,
-                    ),
-                    const Divider(
-                      height: 1,
-                      indent: 48,
-                      color: EmergencyRequestsScreen.cardBorderColor,
-                    ),
-                    _DetailRow(
-                      icon: Icons.medical_services_outlined,
-                      label: 'Required Units',
-                      value: unitsString,
-                    ),
-                    const Divider(
-                      height: 1,
-                      indent: 48,
-                      color: EmergencyRequestsScreen.cardBorderColor,
-                    ),
-                    _DetailRow(
-                      icon: Icons.person_outline_rounded,
-                      label: 'Patient Name',
-                      value: patientName,
-                    ),
-                    const Divider(
-                      height: 1,
-                      indent: 48,
-                      color: EmergencyRequestsScreen.cardBorderColor,
-                    ),
-                    _DetailRow(
-                      icon: Icons.phone_outlined,
-                      label: 'Contact Number',
-                      value: contactNumber,
-                    ),
-                    const Divider(
-                      height: 1,
-                      indent: 48,
-                      color: EmergencyRequestsScreen.cardBorderColor,
-                    ),
-                    _DetailRow(
-                      icon: Icons.timelapse_rounded,
-                      label: 'Request Status',
-                      value: statusDisplay,
-                      valueColor: const Color(0xFF2E7D32),
-                    ),
-                    const Divider(
-                      height: 1,
-                      indent: 48,
-                      color: EmergencyRequestsScreen.cardBorderColor,
-                    ),
-                    _DetailRow(
-                      icon: Icons.calendar_today_outlined,
-                      label: 'Created Date & Time',
-                      value: createdDateStr,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Description Card
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: EmergencyRequestsScreen.cardBorderColor),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.description_outlined,
-                          size: 16,
-                          color: EmergencyRequestsScreen.textSecondaryColor,
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          'Description / Clinical Notes',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: EmergencyRequestsScreen.textSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: EmergencyRequestsScreen.textPrimaryColor,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Close Details Button (strictly no respond/accept buttons in this step)
-              OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: const BorderSide(color: EmergencyRequestsScreen.cardBorderColor),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Close Details',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: EmergencyRequestsScreen.textPrimaryColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Helper row for displaying key-value information in the details sheet.
-class _DetailRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? valueColor;
-
-  const _DetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: const Color(0xFF6B7280),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: valueColor ?? const Color(0xFF1F2937),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

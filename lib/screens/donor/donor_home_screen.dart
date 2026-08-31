@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'donor_profile_screen.dart';
 import 'emergency_requests_screen.dart';
+import 'my_responses_screen.dart';
+import 'donation_history_screen.dart';
 
 /// Modern, professional Blood Donor Dashboard for mobile healthcare applications.
 class DonorHomeScreen extends StatelessWidget {
@@ -53,6 +55,24 @@ class DonorHomeScreen extends StatelessWidget {
       context,
       MaterialPageRoute(
         builder: (context) => const EmergencyRequestsScreen(),
+      ),
+    );
+  }
+
+  void _navigateToMyResponses(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MyResponsesScreen(),
+      ),
+    );
+  }
+
+  void _navigateToDonationHistory(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const DonationHistoryScreen(),
       ),
     );
   }
@@ -494,28 +514,14 @@ class DonorHomeScreen extends StatelessWidget {
               iconColor: const Color(0xFF7C3AED),
               title: 'My Responses',
               description: 'Track your responses',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('My Responses will be available soon'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
+              onTap: () => _navigateToMyResponses(context),
             ),
             _buildActionCard(
               icon: Icons.history_rounded,
               iconColor: const Color(0xFF059669),
               title: 'Donation History',
               description: 'View your donation records',
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Donation History will be available soon'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
+              onTap: () => _navigateToDonationHistory(context),
             ),
           ],
         ),
