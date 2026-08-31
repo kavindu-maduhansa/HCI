@@ -32,11 +32,14 @@ class HistoryTab extends StatefulWidget {
   State<HistoryTab> createState() => _HistoryTabState();
 }
 
+enum _HistorySortMode { newest, oldest, bloodGroup, patientName }
+
 class _HistoryTabState extends State<HistoryTab> {
   String? _statusFilter;
   String? _priorityFilter;
   String? _bloodGroupFilter;
   DateTimeRange? _dateRange;
+  _HistorySortMode _sortMode = _HistorySortMode.newest;
   final TextEditingController _searchController = TextEditingController();
 
   // #5 - Saved Filters, persisted on this device (SharedPreferences)
@@ -212,6 +215,36 @@ class _HistoryTabState extends State<HistoryTab> {
                       onPressed: () => setState(() => _dateRange = null),
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: PopupMenuButton<_HistorySortMode>(
+                    tooltip: 'Sort history',
+                    initialValue: _sortMode,
+                    onSelected: (v) => setState(() => _sortMode = v),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: _HistorySortMode.newest, child: Text('Newest First')),
+                      PopupMenuItem(value: _HistorySortMode.oldest, child: Text('Oldest First')),
+                      PopupMenuItem(value: _HistorySortMode.bloodGroup, child: Text('Blood Group')),
+                      PopupMenuItem(value: _HistorySortMode.patientName, child: Text('Patient Name (A-Z)')),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: colors.elevatedSurface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: colors.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.sort_rounded, size: 15, color: colors.textSecondary),
+                          const SizedBox(width: 4),
+                          Text(_sortLabel(_sortMode), style: TextStyle(fontSize: 11.5, color: colors.textSecondary, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -276,9 +309,19 @@ class _HistoryTabState extends State<HistoryTab> {
                 return const ListCardSkeleton();
               }
 
-              var requests = snapshot.data!.docs.map(BloodRequest.fromDoc).toList()
-                ..sort((a, b) => (b.updatedAt ?? b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-                    .compareTo(a.updatedAt ?? a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+              var requests = snapshot.data!.docs.map(BloodRequest.fromDoc).toList();
+              switch (_sortMode) {
+                case _HistorySortMode.newest:
+                  requests.sort((a, b) => (b.updatedAt ?? b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                      .compareTo(a.updatedAt ?? a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+                case _HistorySortMode.oldest:
+                  requests.sort((a, b) => (a.updatedAt ?? a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+                      .compareTo(b.updatedAt ?? b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+                case _HistorySortMode.bloodGroup:
+                  requests.sort((a, b) => a.bloodGroup.compareTo(b.bloodGroup));
+                case _HistorySortMode.patientName:
+                  requests.sort((a, b) => a.patientName.toLowerCase().compareTo(b.patientName.toLowerCase()));
+              }
 
               if (_statusFilter != null) requests = requests.where((r) => r.status == _statusFilter).toList();
               if (_priorityFilter != null) requests = requests.where((r) => r.urgency == _priorityFilter).toList();
@@ -344,6 +387,19 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   static String _fmt(DateTime d) => '${d.day}/${d.month}';
+
+  static String _sortLabel(_HistorySortMode mode) {
+    switch (mode) {
+      case _HistorySortMode.newest:
+        return 'Newest';
+      case _HistorySortMode.oldest:
+        return 'Oldest';
+      case _HistorySortMode.bloodGroup:
+        return 'Blood Group';
+      case _HistorySortMode.patientName:
+        return 'Name';
+    }
+  }
 
   // Fixed presets always offered, independent of what the doctor has
   // personally saved - the exact examples from the module spec.
