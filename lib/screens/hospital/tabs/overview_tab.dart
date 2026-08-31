@@ -809,17 +809,19 @@ class _AnalyticsSection extends StatelessWidget {
           Text('Real analytics will replace this preview once requests start coming in from the Recipient app.',
               style: TextStyle(fontSize: 12, color: colors.textSecondary)),
           const SizedBox(height: 10),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: demoStats.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              mainAxisExtent: 128,
+          LayoutBuilder(
+            builder: (context, constraints) => GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: demoStats.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: constraints.maxWidth >= 620 ? 4 : 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                mainAxisExtent: 128,
+              ),
+              itemBuilder: (context, i) => _StatCard(data: demoStats[i], demo: true),
             ),
-            itemBuilder: (context, i) => _StatCard(data: demoStats[i], demo: true),
           ),
         ],
       );
@@ -855,17 +857,19 @@ class _AnalyticsSection extends StatelessWidget {
       children: [
         Text('Dashboard Analytics', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colors.textPrimary)),
         const SizedBox(height: 10),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: stats.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            mainAxisExtent: 128,
+        LayoutBuilder(
+          builder: (context, constraints) => GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: stats.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: constraints.maxWidth >= 620 ? 4 : 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              mainAxisExtent: 128,
+            ),
+            itemBuilder: (context, i) => _StatCard(data: stats[i]),
           ),
-          itemBuilder: (context, i) => _StatCard(data: stats[i]),
         ),
       ],
     );
@@ -2042,14 +2046,19 @@ class _DonorLeaderboardSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.emoji_events_rounded, size: 18, color: colors.warning),
+              Icon(Icons.workspace_premium_outlined, size: 18, color: colors.champagne),
               const SizedBox(width: 8),
-              Expanded(child: Text('Top Donors', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: colors.textPrimary))),
+              Expanded(child: Text('Top Responding Donors', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: colors.textPrimary))),
               if (isDemo) const _DemoBadge(),
             ],
           ),
           const SizedBox(height: 4),
-          Text('Ranked by completed donations, all time', style: TextStyle(fontSize: 12, color: colors.textSecondary)),
+          // #operational-tone - the module spec calls for this section
+          // to read as an operational resource ("who can we call on")
+          // rather than a game-style leaderboard, so the copy and the
+          // rank markers below lean clinical: numbered badges instead
+          // of medal emoji, no score/points language.
+          Text('Most reliable donors by completed donations, all time', style: TextStyle(fontSize: 12, color: colors.textSecondary)),
           const SizedBox(height: 14),
           if (entries.isEmpty)
             Padding(
@@ -2060,22 +2069,24 @@ class _DonorLeaderboardSection extends StatelessWidget {
             ...entries.asMap().entries.map((e) {
               final rank = e.key + 1;
               final (name, count, units) = e.value;
-              final medal = rank == 1
-                  ? '🥇'
-                  : rank == 2
-                      ? '🥈'
-                      : rank == 3
-                          ? '🥉'
-                          : null;
+              final topThree = rank <= 3;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
                   children: [
                     SizedBox(
                       width: 28,
-                      child: medal != null
-                          ? Text(medal, style: const TextStyle(fontSize: 16))
-                          : Text('$rank', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: colors.textSecondary)),
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: topThree ? colors.champagne.withValues(alpha: 0.18) : Colors.transparent,
+                          border: topThree ? Border.all(color: colors.champagne.withValues(alpha: 0.5)) : null,
+                        ),
+                        child: Text('$rank', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: topThree ? colors.champagne : colors.textSecondary)),
+                      ),
                     ),
                     Expanded(
                       child: Text(name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: colors.textPrimary), overflow: TextOverflow.ellipsis),
