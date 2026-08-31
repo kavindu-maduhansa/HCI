@@ -316,7 +316,12 @@ class _CommandPaletteResults extends StatelessWidget {
                 ? const <BloodRequest>[]
                 : (requestSnap.data?.docs ?? const [])
                     .map(BloodRequest.fromDoc)
-                    .where((r) => r.patientName.toLowerCase().contains(liveQuery) || r.hospitalName.toLowerCase().contains(liveQuery) || r.location.toLowerCase().contains(liveQuery))
+                    .where((r) =>
+                        r.patientName.toLowerCase().contains(liveQuery) ||
+                        r.hospitalName.toLowerCase().contains(liveQuery) ||
+                        r.location.toLowerCase().contains(liveQuery) ||
+                        r.id.toLowerCase().contains(liveQuery) ||
+                        r.bloodGroup.toLowerCase().contains(liveQuery))
                     .take(6)
                     .toList();
 
