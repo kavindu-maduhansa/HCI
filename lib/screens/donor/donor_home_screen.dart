@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'donor_profile_screen.dart';
+import 'emergency_requests_screen.dart';
 
-/// Home screen for Donor role with quick navigation to Donor Profile.
+/// Home screen for Donor role with quick navigation to Donor Profile
+/// and Emergency Blood Requests.
 class DonorHomeScreen extends StatelessWidget {
   const DonorHomeScreen({super.key});
 
@@ -29,6 +31,15 @@ class DonorHomeScreen extends StatelessWidget {
     );
   }
 
+  void _navigateToEmergencyRequests(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const EmergencyRequestsScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const primaryColor = Color(0xFFC62828);
@@ -40,6 +51,11 @@ class DonorHomeScreen extends StatelessWidget {
         backgroundColor: primaryColor,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            tooltip: 'Emergency Requests',
+            icon: const Icon(Icons.emergency_rounded),
+            onPressed: () => _navigateToEmergencyRequests(context),
+          ),
           IconButton(
             tooltip: 'My Profile',
             icon: const Icon(Icons.account_circle_rounded),
@@ -97,7 +113,7 @@ class DonorHomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Welcome to Blood Donation HCI.\nManage your donor profile and donation readiness below.',
+                      'Welcome to Blood Donation HCI.\nView urgent blood requests or manage your donor profile below.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -105,12 +121,13 @@ class DonorHomeScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
+                    // Primary Action: Emergency Blood Requests
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () => _navigateToProfile(context),
-                        icon: const Icon(Icons.person_rounded),
-                        label: const Text('View & Edit Profile'),
+                        onPressed: () => _navigateToEmergencyRequests(context),
+                        icon: const Icon(Icons.emergency_rounded),
+                        label: const Text('Emergency Blood Requests'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
@@ -122,13 +139,14 @@ class DonorHomeScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    // Secondary Action: Donor Profile
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () => _handleSignOut(context),
-                        icon: const Icon(Icons.logout_rounded, color: primaryColor),
+                        onPressed: () => _navigateToProfile(context),
+                        icon: const Icon(Icons.person_rounded, color: primaryColor),
                         label: const Text(
-                          'Sign Out',
+                          'View & Edit Profile',
                           style: TextStyle(color: primaryColor),
                         ),
                         style: OutlinedButton.styleFrom(
@@ -136,6 +154,22 @@ class DonorHomeScreen extends StatelessWidget {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Tertiary Action: Sign Out
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: () => _handleSignOut(context),
+                        icon: const Icon(Icons.logout_rounded, color: Color(0xFF6B7280)),
+                        label: const Text(
+                          'Sign Out',
+                          style: TextStyle(color: Color(0xFF6B7280)),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
                       ),
                     ),
