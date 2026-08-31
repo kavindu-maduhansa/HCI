@@ -684,7 +684,31 @@ class _CoordinationCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          Text('${request.unitsConfirmed} / ${request.unitsNeeded} units confirmed', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.textPrimary)),
+          Row(
+            children: [
+              Text('${request.unitsConfirmed} / ${request.unitsNeeded} Units Confirmed', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.textPrimary)),
+              const Spacer(),
+              if (request.unitsRemaining > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: colors.warning.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                  child: Text('${request.unitsRemaining} unit(s) remaining', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: colors.warning)),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: colors.success.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_circle_rounded, size: 11, color: colors.success),
+                      const SizedBox(width: 3),
+                      Text('Fully covered', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: colors.success)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
@@ -763,7 +787,10 @@ class _ResponseRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(response.donorName, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: colors.textPrimary)),
-                    Text('${response.unitsPledged} unit(s) pledged', style: TextStyle(fontSize: 11, color: colors.textSecondary)),
+                    Text(
+                      response.status == 'completed' ? '${response.unitsPledged} unit(s) confirmed' : '${response.unitsPledged} unit(s) pledged',
+                      style: TextStyle(fontSize: 11, color: response.status == 'completed' ? colors.success : colors.textSecondary, fontWeight: response.status == 'completed' ? FontWeight.w600 : FontWeight.normal),
+                    ),
                   ],
                 ),
               ),
