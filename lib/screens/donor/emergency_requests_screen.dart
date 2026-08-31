@@ -389,19 +389,19 @@ class _EmergencyRequestsScreenState extends State<EmergencyRequestsScreen> {
                     ? rawBloodGroup.trim()
                     : 'Not specified';
 
-                final rawHospital = data['hospitalName'] as String?;
+                final rawHospital = (data['hospitalName'] ?? data['organizationName']) as String?;
                 final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
                     ? rawHospital.trim()
-                    : 'Unknown hospital';
+                    : 'Hospital not specified';
 
                 final rawLocation = data['location'] as String?;
                 final location = (rawLocation != null && rawLocation.trim().isNotEmpty)
                     ? rawLocation.trim()
-                    : 'Unknown location';
+                    : 'Location not specified';
 
-                final urgencyConfig = EmergencyRequestsScreen.getUrgencyConfig(data['urgency']);
+                final urgencyConfig = EmergencyRequestsScreen.getUrgencyConfig(data['urgency'] ?? data['urgencyLevel']);
 
-                final rawUnits = data['requiredUnits'];
+                final rawUnits = data['requiredUnits'] ?? data['unitsNeeded'];
                 final unitsString = rawUnits != null
                     ? '$rawUnits ${rawUnits == 1 ? 'Unit' : 'Units'} required'
                     : 'Units: Not specified';

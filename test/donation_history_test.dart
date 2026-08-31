@@ -23,6 +23,7 @@ void main() {
       expect(DonationHistoryScreen.getStatusConfig('completed').label, 'Completed');
       expect(DonationHistoryScreen.getStatusConfig('COMPLETED').label, 'Completed');
       expect(DonationHistoryScreen.getStatusConfig('verified').label, 'Verified');
+      expect(DonationHistoryScreen.getStatusConfig('approved').label, 'Verified');
       expect(DonationHistoryScreen.getStatusConfig('pending').label, 'Pending');
       expect(DonationHistoryScreen.getStatusConfig('cancelled').label, 'Cancelled');
       expect(DonationHistoryScreen.getStatusConfig('CANCELED').label, 'Cancelled');

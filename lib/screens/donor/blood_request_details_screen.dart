@@ -225,9 +225,9 @@ class _BloodRequestDetailsScreenState extends State<BloodRequestDetailsScreen> {
               : 'Not specified';
 
       // Step 3: Save donor response to donor_responses collection
-      final requestHospital = (widget.requestData['hospitalName'] as String?)?.trim() ?? 'Unknown Hospital';
+      final requestHospital = ((widget.requestData['hospitalName'] ?? widget.requestData['organizationName']) as String?)?.trim() ?? 'Unknown Hospital';
       final requestedBloodGroup = (widget.requestData['bloodGroup'] as String?)?.trim() ?? 'Unknown';
-      final requestUrgency = (widget.requestData['urgency'] as String?)?.trim() ?? 'Standard';
+      final requestUrgency = ((widget.requestData['urgency'] ?? widget.requestData['urgencyLevel']) as String?)?.trim() ?? 'Standard';
 
       await FirebaseFirestore.instance.collection('donor_responses').add({
         'requestId': widget.requestId,
@@ -343,19 +343,19 @@ class _BloodRequestDetailsScreenState extends State<BloodRequestDetailsScreen> {
         ? rawBloodGroup.trim()
         : 'Not specified';
 
-    final rawHospital = data['hospitalName'] as String?;
+    final rawHospital = (data['hospitalName'] ?? data['organizationName']) as String?;
     final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
         ? rawHospital.trim()
-        : 'Unknown hospital';
+        : 'Hospital not specified';
 
     final rawLocation = data['location'] as String?;
     final location = (rawLocation != null && rawLocation.trim().isNotEmpty)
         ? rawLocation.trim()
-        : 'Unknown location';
+        : 'Location not specified';
 
-    final urgencyConfig = BloodRequestDetailsScreen.getUrgencyConfig(data['urgency']);
+    final urgencyConfig = BloodRequestDetailsScreen.getUrgencyConfig(data['urgency'] ?? data['urgencyLevel']);
 
-    final rawUnits = data['requiredUnits'];
+    final rawUnits = data['requiredUnits'] ?? data['unitsNeeded'];
     final unitsString = rawUnits != null
         ? '$rawUnits ${rawUnits == 1 ? 'Unit' : 'Units'}'
         : 'Not specified';

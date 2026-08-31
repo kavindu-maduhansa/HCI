@@ -75,6 +75,7 @@ class DonationHistoryScreen extends StatefulWidget {
           icon: Icons.check_circle_rounded,
         );
       case 'verified':
+      case 'approved':
         return const DonationStatusConfig(
           label: 'Verified',
           textColor: Color(0xFF0369A1),
@@ -386,7 +387,7 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Your completed blood donations will appear here.',
+                      'You have not completed any blood donations yet. Your completed donations will appear here.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -429,10 +430,10 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen> {
                     ? rawBloodGroup.trim()
                     : 'Blood Donation';
 
-                final rawHospital = data['hospitalName'] as String?;
+                final rawHospital = (data['hospitalName'] ?? data['organizationName']) as String?;
                 final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
                     ? rawHospital.trim()
-                    : 'Hospital not specified';
+                    : 'Hospital / Organization not specified';
 
                 final rawLocation = data['location'] as String?;
                 final location = (rawLocation != null && rawLocation.trim().isNotEmpty)

@@ -418,7 +418,7 @@ class _MyResponsesScreenState extends State<MyResponsesScreen> {
                     ? rawBloodGroup.trim()
                     : 'Blood Donor';
 
-                final rawHospital = data['hospitalName'] as String?;
+                final rawHospital = (data['hospitalName'] ?? data['organizationName']) as String?;
                 final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
                     ? rawHospital.trim()
                     : 'Emergency Blood Request';
