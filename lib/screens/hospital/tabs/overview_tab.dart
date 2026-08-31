@@ -1467,22 +1467,37 @@ class _PolishedEmptyCard extends StatelessWidget {
 /// days, computed from real `createdAt` timestamps already on every
 /// request. A lightweight bar chart - no charting package dependency
 /// needed for this shape of data.
-class _RequestTrendCard extends StatelessWidget {
+/// #time-range - Request Trend now supports a 7 Days / 30 Days toggle
+/// (the spec's "Time controls") instead of being hard-locked to a
+/// week. 30 Days reuses the identical per-day counting logic over a
+/// longer window; only the bar width/spacing and which day labels
+/// are drawn change, to keep 30 thin bars legible instead of
+/// overlapping text.
+class _RequestTrendCard extends StatefulWidget {
   final List<BloodRequest> allRequests;
   const _RequestTrendCard({required this.allRequests});
 
-  static const _demoCounts = [3, 5, 2, 6, 4, 7, 5];
+  @override
+  State<_RequestTrendCard> createState() => _RequestTrendCardState();
+}
+
+class _RequestTrendCardState extends State<_RequestTrendCard> {
+  int _rangeDays = 7;
+
+  static const _demoCounts7 = [3, 5, 2, 6, 4, 7, 5];
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final allRequests = widget.allRequests;
     final isDemo = allRequests.isEmpty;
 
     final today = DateTime.now();
-    final days = List.generate(7, (i) => DateTime(today.year, today.month, today.day).subtract(Duration(days: 6 - i)));
+    final days = List.generate(
+        _rangeDays, (i) => DateTime(today.year, today.month, today.day).subtract(Duration(days: _rangeDays - 1 - i)));
     List<int> counts;
     if (isDemo) {
-      counts = _demoCounts;
+      counts = _rangeDays == 7 ? _demoCounts7 : List.generate(30, (i) => (i % 7 == 3) ? 8 : 2 + (i % 5));
     } else {
       counts = days.map((day) {
         return allRequests.where((r) {
@@ -1493,6 +1508,7 @@ class _RequestTrendCard extends StatelessWidget {
       }).toList();
     }
     final maxCount = counts.fold<int>(1, (m, v) => v > m ? v : m);
+    final showLabelEvery = _rangeDays == 7 ? 1 : 5;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1502,27 +1518,35 @@ class _RequestTrendCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Request Trend · Last 7 Days', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: colors.textPrimary))),
+              Expanded(child: Text('Request Trend', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: colors.textPrimary))),
               if (isDemo) const _DemoBadge(),
+              const SizedBox(width: 8),
+              _RangeToggle(
+                value: _rangeDays,
+                options: const [7, 30],
+                labels: const {7: '7D', 30: '30D'},
+                onChanged: (v) => setState(() => _rangeDays = v),
+              ),
             ],
           ),
           const SizedBox(height: 4),
-          Text('New requests created per day', style: TextStyle(fontSize: 12, color: colors.textSecondary)),
+          Text('New requests created per day · last $_rangeDays days', style: TextStyle(fontSize: 12, color: colors.textSecondary)),
           const SizedBox(height: 18),
           SizedBox(
             height: 110,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(7, (i) {
+              children: List.generate(_rangeDays, (i) {
                 final fraction = maxCount == 0 ? 0.0 : counts[i] / maxCount;
-                final isToday = i == 6;
+                final isToday = i == _rangeDays - 1;
+                final showLabel = (i % showLabelEvery == 0) || isToday;
                 return Expanded(
                   child: Padding(
-                    padding: EdgeInsets.only(right: i == 6 ? 0 : 6),
+                    padding: EdgeInsets.only(right: i == _rangeDays - 1 ? 0 : (_rangeDays == 7 ? 6 : 2)),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text('${counts[i]}', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: colors.textSecondary)),
+                        if (_rangeDays == 7) Text('${counts[i]}', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: colors.textSecondary)),
                         const SizedBox(height: 4),
                         // #safety - a plain Column gives non-Expanded children
                         // UNBOUNDED height, so FractionallySizedBox previously
@@ -1538,7 +1562,7 @@ class _RequestTrendCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(4),
                             child: TweenAnimationBuilder<double>(
                               tween: Tween(begin: 0.0, end: fraction.clamp(0.04, 1.0)),
-                              duration: Duration(milliseconds: 500 + i * 80),
+                              duration: Duration(milliseconds: 400 + i * (_rangeDays == 7 ? 80 : 15)),
                               curve: Curves.easeOutCubic,
                               builder: (context, value, _) => FractionallySizedBox(
                                 heightFactor: value.clamp(0.0, 1.0),
@@ -1554,7 +1578,12 @@ class _RequestTrendCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(_weekdayLabel(days[i]), style: TextStyle(fontSize: 10, color: colors.textSecondary)),
+                        SizedBox(
+                          height: 12,
+                          child: showLabel
+                              ? Text(_rangeDays == 7 ? _weekdayLabel(days[i]) : _dayLabel(days[i]), style: TextStyle(fontSize: 9.5, color: colors.textSecondary))
+                              : null,
+                        ),
                       ],
                     ),
                   ),
@@ -1570,6 +1599,43 @@ class _RequestTrendCard extends StatelessWidget {
   static String _weekdayLabel(DateTime d) {
     const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return labels[d.weekday - 1];
+  }
+
+  static String _dayLabel(DateTime d) => '${d.day}';
+}
+
+/// Small pill-group toggle (e.g. "7D / 30D") reused wherever a card
+/// needs a time-range control, styled to match the module's existing
+/// chip conventions rather than a default SegmentedButton.
+class _RangeToggle<T> extends StatelessWidget {
+  final T value;
+  final List<T> options;
+  final Map<T, String> labels;
+  final ValueChanged<T> onChanged;
+  const _RangeToggle({required this.value, required this.options, required this.labels, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(color: colors.elevatedSurface, borderRadius: BorderRadius.circular(8), border: Border.all(color: colors.border)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: options.map((o) {
+          final selected = o == value;
+          return InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => onChanged(o),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(color: selected ? colors.primary : Colors.transparent, borderRadius: BorderRadius.circular(6)),
+              child: Text(labels[o] ?? '$o', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: selected ? Colors.white : colors.textSecondary)),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 }
 
