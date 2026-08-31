@@ -396,11 +396,11 @@ class _DonorListStream extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final compatibleGroups = this.compatibleGroups;
-    final _bloodGroupFilter = bloodGroupFilter;
-    final _onlyVerified = onlyVerified;
-    final _onlyEligible = onlyEligible;
-    final _onlyAvailable = onlyAvailable;
-    final _sortMode = sortMode;
+    final bloodGroupFilterLocal = bloodGroupFilter;
+    final onlyVerifiedLocal = onlyVerified;
+    final onlyEligibleLocal = onlyEligible;
+    final onlyAvailableLocal = onlyAvailable;
+    final sortModeLocal = sortMode;
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: donorsStream,
@@ -424,14 +424,14 @@ class _DonorListStream extends StatelessWidget {
                 final eligible = DonorEligibility.isEligible(lastDonation);
 
                 if (data['isActive'] == false) return false;
-                if (_bloodGroupFilter != null) {
-                  if (group != _bloodGroupFilter) return false;
+                if (bloodGroupFilterLocal != null) {
+                  if (group != bloodGroupFilterLocal) return false;
                 } else if (compatibleGroups != null) {
                   if (group == null || !compatibleGroups.contains(group)) return false;
                 }
-                if (_onlyVerified && !verified) return false;
-                if (_onlyEligible && !eligible) return false;
-                if (_onlyAvailable && !available) return false;
+                if (onlyVerifiedLocal && !verified) return false;
+                if (onlyEligibleLocal && !eligible) return false;
+                if (onlyAvailableLocal && !available) return false;
                 if (query.isNotEmpty && !name.contains(query) && !location.contains(query)) return false;
                 return true;
               }).toList();
@@ -439,7 +439,7 @@ class _DonorListStream extends StatelessWidget {
               // #14 - Smart Donor Matching: transparent, deterministic
               // ranking. Never presented as medical certainty - every
               // contributing factor is shown as a checkmark tag below.
-              switch (_sortMode) {
+              switch (sortModeLocal) {
                 case _SortMode.bestMatch:
                   donors.sort((a, b) => _matchScore(b.data(), requestLocation).compareTo(_matchScore(a.data(), requestLocation)));
                 case _SortMode.recentlyAvailable:

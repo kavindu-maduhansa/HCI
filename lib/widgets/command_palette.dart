@@ -29,7 +29,7 @@ Future<void> showCommandPalette(BuildContext context, {required ValueChanged<int
     barrierDismissible: true,
     barrierColor: Colors.black.withValues(alpha: 0.45),
     transitionDuration: const Duration(milliseconds: 160),
-    pageBuilder: (context, _, __) => _CommandPaletteDialog(onNavigateTab: onNavigateTab),
+    pageBuilder: (context, _, _) => _CommandPaletteDialog(onNavigateTab: onNavigateTab),
     transitionBuilder: (context, animation, _, child) => FadeTransition(
       opacity: animation,
       child: Transform.translate(
