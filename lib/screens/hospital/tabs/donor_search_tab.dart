@@ -46,6 +46,26 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
   bool _onlyAvailable = false;
   _SortMode _sortMode = _SortMode.bestMatch;
 
+  // #donor-comparison - side-by-side comparison of a handful of
+  // candidate donors, so staff don't have to open each profile in
+  // turn to weigh them against each other. Off by default; only
+  // meaningful when browsing (not when picking a single donor for a
+  // request), so it's gated behind !selectMode below.
+  bool _compareMode = false;
+  final Map<String, _CompareEntry> _compareSelection = {};
+
+  void _toggleCompareSelection(_CompareEntry entry) {
+    setState(() {
+      if (_compareSelection.containsKey(entry.donorId)) {
+        _compareSelection.remove(entry.donorId);
+      } else if (_compareSelection.length < 4) {
+        _compareSelection[entry.donorId] = entry;
+      } else {
+        showErrorSnack(context, 'You can compare up to 4 donors at a time.');
+      }
+    });
+  }
+
   static const _groups = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'];
 
   List<String>? get _compatibleGroups => widget.initialBloodGroupFilter != null
@@ -123,12 +143,33 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
                       children: [
                         Text('Find Donors', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: colors.textPrimary)),
                         Text(
-                          widget.selectMode ? 'Ranked by application match score' : 'Search the verified donor pool',
+                          _compareMode
+                              ? 'Select up to 4 donors to compare'
+                              : (widget.selectMode ? 'Ranked by application match score' : 'Search the verified donor pool'),
                           style: TextStyle(fontSize: 11, color: colors.textSecondary),
                         ),
                       ],
                     ),
                   ),
+                  if (!widget.selectMode)
+                    Tooltip(
+                      message: _compareMode ? 'Exit comparison' : 'Compare Donors',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(() {
+                          _compareMode = !_compareMode;
+                          if (!_compareMode) _compareSelection.clear();
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: _compareMode ? colors.primary : colors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.compare_arrows_rounded, size: 18, color: _compareMode ? Colors.white : colors.primary),
+                        ),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -270,10 +311,21 @@ class _DonorSearchTabState extends State<DonorSearchTab> {
                 selectMode: widget.selectMode,
                 requestLocation: widget.requestLocation,
                 reliability: reliability,
+                compareMode: _compareMode,
+                compareSelection: _compareSelection,
+                onToggleCompare: _toggleCompareSelection,
               );
             },
           ),
         ),
+        if (_compareMode && _compareSelection.isNotEmpty)
+          _CompareBar(
+            count: _compareSelection.length,
+            onClear: () => setState(_compareSelection.clear),
+            onCompare: _compareSelection.length < 2
+                ? null
+                : () => _showDonorComparisonDialog(context, colors, _compareSelection.values.toList()),
+          ),
       ],
     );
   }
@@ -304,6 +356,9 @@ class _DonorListStream extends StatelessWidget {
   final bool selectMode;
   final String? requestLocation;
   final Map<String, (int completed, int declined)> reliability;
+  final bool compareMode;
+  final Map<String, _CompareEntry> compareSelection;
+  final void Function(_CompareEntry entry) onToggleCompare;
 
   const _DonorListStream({
     required this.bloodGroupFilter,
@@ -316,6 +371,9 @@ class _DonorListStream extends StatelessWidget {
     required this.selectMode,
     required this.requestLocation,
     required this.reliability,
+    required this.compareMode,
+    required this.compareSelection,
+    required this.onToggleCompare,
   });
 
   @override
@@ -433,6 +491,9 @@ class _DonorListStream extends StatelessWidget {
                             requestLocation: requestLocation,
                             rank: selectMode ? index : null,
                             reliability: reliability[doc.id],
+                            compareMode: compareMode,
+                            compareSelected: compareSelection.containsKey(doc.id),
+                            onToggleCompare: onToggleCompare,
                           ),
                         );
                       },
@@ -626,6 +687,137 @@ _MatchTier? _tierFor(int score) {
   return null;
 }
 
+/// #donor-comparison - one selected donor's snapshot, captured at the
+/// moment it was checked so the comparison dialog doesn't need to
+/// re-query Firestore for donors that may have scrolled off-screen.
+class _CompareEntry {
+  final String donorId;
+  final Map<String, dynamic> data;
+  final (int completed, int declined)? reliability;
+  const _CompareEntry({required this.donorId, required this.data, this.reliability});
+}
+
+/// Sticky bottom bar shown while in comparison mode with 1+ donors
+/// selected - lets staff clear the selection or open the comparison
+/// once at least 2 donors are picked.
+class _CompareBar extends StatelessWidget {
+  final int count;
+  final VoidCallback onClear;
+  final VoidCallback? onCompare;
+  const _CompareBar({required this.count, required this.onClear, required this.onCompare});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.border)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -3))],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.compare_arrows_rounded, size: 18, color: colors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$count donor${count == 1 ? '' : 's'} selected${count < 2 ? ' - pick at least 2' : ''}',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: colors.textPrimary),
+            ),
+          ),
+          TextButton(onPressed: onClear, child: const Text('Clear')),
+          const SizedBox(width: 4),
+          ElevatedButton(
+            onPressed: onCompare,
+            style: ElevatedButton.styleFrom(backgroundColor: colors.primary, foregroundColor: Colors.white, disabledBackgroundColor: colors.border),
+            child: const Text('Compare'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// #donor-comparison - a side-by-side table of up to 4 selected donors
+/// across the same fields the individual profile/match-breakdown
+/// views already use (compatibility is implicit - the search's own
+/// filters already narrowed to compatible groups). Every value comes
+/// from the same Firestore fields and reliability map used elsewhere
+/// on this screen - nothing new is computed or invented here.
+void _showDonorComparisonDialog(BuildContext context, AppColors colors, List<_CompareEntry> entries) {
+  showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return Dialog(
+        backgroundColor: colors.surface,
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.compare_arrows_rounded, color: colors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text('Donor Comparison', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colors.textPrimary))),
+                    IconButton(icon: Icon(Icons.close_rounded, color: colors.textSecondary), onPressed: () => Navigator.pop(dialogContext)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowColor: WidgetStateProperty.all(colors.elevatedSurface),
+                      columns: [
+                        const DataColumn(label: Text('')),
+                        for (final e in entries) DataColumn(label: Text(e.data['fullName'] as String? ?? 'Donor', style: TextStyle(fontWeight: FontWeight.bold, color: colors.textPrimary))),
+                      ],
+                      rows: [
+                        _compareRow('Blood Group', entries, (e) => e.data['bloodGroup'] as String? ?? '-', colors),
+                        _compareRow('Verified', entries, (e) => e.data['verified'] == true ? 'Yes' : 'No', colors),
+                        _compareRow('Available', entries, (e) => e.data['availableNow'] != false ? 'Yes' : 'No', colors),
+                        _compareRow('Eligible', entries, (e) {
+                          final last = (e.data['lastDonationDate'] as Timestamp?)?.toDate();
+                          return DonorEligibility.isEligible(last) ? 'Yes' : 'In ${DonorEligibility.daysUntilEligible(last)}d';
+                        }, colors),
+                        _compareRow('Location', entries, (e) => (e.data['location'] as String?)?.trim().isNotEmpty == true ? (e.data['location'] as String).trim() : 'Not set', colors),
+                        _compareRow('Match Score', entries, (e) => '${_matchScore(e.data, null)}%', colors),
+                        _compareRow('Reliability', entries, (e) {
+                          final r = e.reliability;
+                          if (r == null || (r.$1 + r.$2) == 0) return 'New donor';
+                          return '${(r.$1 / (r.$1 + r.$2) * 100).round()}% (${r.$1}/${r.$1 + r.$2})';
+                        }, colors),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Matching assistance only — final donor selection remains with authorized medical staff.',
+                  style: TextStyle(fontSize: 10.5, color: colors.textSecondary, fontStyle: FontStyle.italic),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+DataRow _compareRow(String label, List<_CompareEntry> entries, String Function(_CompareEntry) valueOf, AppColors colors) {
+  return DataRow(cells: [
+    DataCell(Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: colors.textSecondary))),
+    for (final e in entries) DataCell(Text(valueOf(e), style: TextStyle(fontSize: 12.5, color: colors.textPrimary))),
+  ]);
+}
+
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -690,8 +882,21 @@ class _DonorCard extends StatelessWidget {
   final String? requestLocation;
   final int? rank;
   final (int completed, int declined)? reliability;
+  final bool compareMode;
+  final bool compareSelected;
+  final void Function(_CompareEntry entry)? onToggleCompare;
 
-  const _DonorCard({required this.donorId, required this.data, required this.selectMode, this.requestLocation, this.rank, this.reliability});
+  const _DonorCard({
+    required this.donorId,
+    required this.data,
+    required this.selectMode,
+    this.requestLocation,
+    this.rank,
+    this.reliability,
+    this.compareMode = false,
+    this.compareSelected = false,
+    this.onToggleCompare,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -709,20 +914,25 @@ class _DonorCard extends StatelessWidget {
 
     return PressableScale(
       borderRadius: BorderRadius.circular(14),
-      onTap: selectMode
-          ? () => Navigator.pop(context, {
-                'donorId': donorId,
-                'donorName': name,
-                'donorPhone': data['phoneNumber'] ?? '',
-                'bloodGroup': group,
-              })
-          : () => _showDonorProfile(context, colors),
+      onTap: compareMode
+          ? () => onToggleCompare?.call(_CompareEntry(donorId: donorId, data: data, reliability: reliability))
+          : (selectMode
+              ? () => Navigator.pop(context, {
+                    'donorId': donorId,
+                    'donorName': name,
+                    'donorPhone': data['phoneNumber'] ?? '',
+                    'bloodGroup': group,
+                  })
+              : () => _showDonorProfile(context, colors)),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: colors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: tier != null ? tier.color(colors).withValues(alpha: 0.5) : colors.border, width: tier != null ? 1.4 : 1),
+          border: Border.all(
+            color: compareSelected ? colors.primary : (tier != null ? tier.color(colors).withValues(alpha: 0.5) : colors.border),
+            width: compareSelected ? 1.8 : (tier != null ? 1.4 : 1),
+          ),
           boxShadow: [
             BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 3)),
           ],
@@ -750,6 +960,14 @@ class _DonorCard extends StatelessWidget {
               ),
             Row(
               children: [
+                if (compareMode) ...[
+                  Icon(
+                    compareSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                    size: 22,
+                    color: compareSelected ? colors.primary : colors.textSecondary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 Container(
                   padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
