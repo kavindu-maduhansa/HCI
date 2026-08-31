@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Screen displaying active emergency blood requests from Firestore `blood_requests`.
-class EmergencyRequestsScreen extends StatelessWidget {
+/// Screen displaying active emergency blood requests for donors in real time.
+class EmergencyRequestsScreen extends StatefulWidget {
   const EmergencyRequestsScreen({super.key});
 
   static const Color primaryColor = Color(0xFFC62828); // Deep Crimson Red
@@ -11,9 +11,9 @@ class EmergencyRequestsScreen extends StatelessWidget {
   static const Color textPrimaryColor = Color(0xFF1F2937);
   static const Color textSecondaryColor = Color(0xFF6B7280);
 
-  /// Formats date string from Timestamp, DateTime, or String safely.
+  /// Formats date string from Timestamp, DateTime, String, int, or null safely.
   static String formatRequestDate(dynamic value) {
-    if (value == null) return 'Date not specified';
+    if (value == null) return 'Not specified';
 
     DateTime? date;
     if (value is Timestamp) {
@@ -22,9 +22,15 @@ class EmergencyRequestsScreen extends StatelessWidget {
       date = value;
     } else if (value is String) {
       date = DateTime.tryParse(value);
+    } else if (value is int) {
+      try {
+        date = DateTime.fromMillisecondsSinceEpoch(value);
+      } catch (_) {
+        date = null;
+      }
     }
 
-    if (date == null) return 'Date not specified';
+    if (date == null) return 'Not specified';
 
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -32,72 +38,93 @@ class EmergencyRequestsScreen extends StatelessWidget {
     ];
 
     final monthStr = months[date.month - 1];
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '${date.day.toString().padLeft(2, '0')} $monthStr ${date.year} at $hour:$minute';
+    final dayStr = date.day.toString().padLeft(2, '0');
+    final hourStr = date.hour.toString().padLeft(2, '0');
+    final minuteStr = date.minute.toString().padLeft(2, '0');
+    return '$dayStr $monthStr ${date.year} at $hourStr:$minuteStr';
   }
 
   /// Converts dynamic timestamp to DateTime for client-side sorting.
-  static DateTime _parseDateTime(dynamic value) {
+  static DateTime? parseDateTime(dynamic value) {
+    if (value == null) return null;
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
-    if (value is String) {
-      return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    if (value is String) return DateTime.tryParse(value);
+    if (value is int) {
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(value);
+      } catch (_) {
+        return null;
+      }
     }
-    return DateTime.fromMillisecondsSinceEpoch(0);
+    return null;
   }
 
-  /// Checks whether request status is active/open/pending.
-  static bool _isActiveStatus(dynamic rawStatus) {
-    if (rawStatus == null) return true; // Include unlabelled requests as active by default
+  /// Checks whether a request status represents an active request.
+  /// Supports: active, open, pending.
+  /// Excludes: completed, cancelled, canceled, closed, fulfilled.
+  static bool isActiveStatus(dynamic rawStatus) {
+    if (rawStatus == null) return true;
     final status = rawStatus.toString().trim().toLowerCase();
-    const inactiveStatuses = ['completed', 'cancelled', 'canceled', 'closed', 'fulfilled'];
-    if (inactiveStatuses.contains(status)) return false;
-    return true;
+    if (status.isEmpty) return true;
+
+    const inactiveStatuses = {
+      'completed',
+      'cancelled',
+      'canceled',
+      'closed',
+      'fulfilled',
+    };
+    if (inactiveStatuses.contains(status)) {
+      return false;
+    }
+
+    const activeStatuses = {'active', 'open', 'pending'};
+    return activeStatuses.contains(status);
   }
 
   /// Returns visual configuration (label, foreground, background, icon) for an urgency level.
-  static _UrgencyBadgeConfig _getUrgencyConfig(dynamic rawUrgency) {
+  static UrgencyBadgeConfig getUrgencyConfig(dynamic rawUrgency) {
     final urgency = rawUrgency?.toString().trim().toLowerCase() ?? '';
 
     switch (urgency) {
       case 'critical':
-        return const _UrgencyBadgeConfig(
+        return const UrgencyBadgeConfig(
           label: 'Critical',
-          textColor: Color(0xFF991B1B),
-          backgroundColor: Color(0xFFFEE2E2),
-          borderColor: Color(0xFFFCA5A5),
+          textColor: Color(0xFFB71C1C),
+          backgroundColor: Color(0xFFFFEBEE),
+          borderColor: Color(0xFFFFCDD2),
           icon: Icons.warning_amber_rounded,
         );
       case 'high':
-        return const _UrgencyBadgeConfig(
+        return const UrgencyBadgeConfig(
           label: 'High Urgency',
-          textColor: Color(0xFFC2410C),
-          backgroundColor: Color(0xFFFFEDD5),
-          borderColor: Color(0xFFFDBA74),
+          textColor: Color(0xFFE65100),
+          backgroundColor: Color(0xFFFFF3E0),
+          borderColor: Color(0xFFFFE0B2),
           icon: Icons.priority_high_rounded,
         );
       case 'medium':
-        return const _UrgencyBadgeConfig(
+        return const UrgencyBadgeConfig(
           label: 'Medium Urgency',
-          textColor: Color(0xFFB45309),
-          backgroundColor: Color(0xFFFEF3C7),
-          borderColor: Color(0xFFFDE68A),
-          icon: Icons.info_outline_rounded,
+          textColor: Color(0xFFF57F17),
+          backgroundColor: Color(0xFFFFFDE7),
+          borderColor: Color(0xFFFFF9C4),
+          icon: Icons.schedule_rounded,
         );
       case 'low':
-        return const _UrgencyBadgeConfig(
+        return const UrgencyBadgeConfig(
           label: 'Low Urgency',
-          textColor: Color(0xFF15803D),
-          backgroundColor: Color(0xFFDCFCE7),
-          borderColor: Color(0xFF86EFAC),
+          textColor: Color(0xFF2E7D32),
+          backgroundColor: Color(0xFFE8F5E9),
+          borderColor: Color(0xFFC8E6C9),
           icon: Icons.check_circle_outline_rounded,
         );
       default:
         final displayLabel = rawUrgency != null && rawUrgency.toString().trim().isNotEmpty
             ? rawUrgency.toString().trim()
             : 'Standard';
-        return _UrgencyBadgeConfig(
+        return UrgencyBadgeConfig(
           label: displayLabel,
           textColor: const Color(0xFF4B5563),
           backgroundColor: const Color(0xFFF3F4F6),
@@ -107,438 +134,485 @@ class EmergencyRequestsScreen extends StatelessWidget {
     }
   }
 
+  @override
+  State<EmergencyRequestsScreen> createState() => _EmergencyRequestsScreenState();
+}
+
+class _EmergencyRequestsScreenState extends State<EmergencyRequestsScreen> {
+  int _streamKey = 0;
+
+  void _retryLoading() {
+    setState(() {
+      _streamKey++;
+    });
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _getRequestsStream() {
+    return FirebaseFirestore.instance.collection('blood_requests').snapshots();
+  }
+
   void _showRequestDetails(BuildContext context, Map<String, dynamic> data, String requestId) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _RequestDetailsBottomSheet(data: data, requestId: requestId),
+      builder: (ctx) => _RequestDetailsBottomSheet(
+        data: data,
+        requestId: requestId,
+      ),
     );
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _getRequestsStream() {
-    try {
-      return FirebaseFirestore.instance
-          .collection('blood_requests')
-          .snapshots();
-    } catch (_) {
-      return null;
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final stream = _getRequestsStream();
-
-    if (stream == null) {
-      return Scaffold(
-        backgroundColor: surfaceColor,
-        appBar: AppBar(
-          title: const Text(
-            'Emergency Requests',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: primaryColor,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        body: const Center(
-          child: Text(
-            'Database is not connected.',
-            style: TextStyle(color: textSecondaryColor, fontSize: 14),
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
-      backgroundColor: surfaceColor,
+      backgroundColor: EmergencyRequestsScreen.surfaceColor,
       appBar: AppBar(
         title: const Text(
-          'Emergency Requests',
-          style: TextStyle(fontWeight: FontWeight.w600),
+          'Emergency Blood Requests',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 19,
+          ),
         ),
-        backgroundColor: primaryColor,
+        backgroundColor: EmergencyRequestsScreen.primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
-        centerTitle: true,
+        centerTitle: false,
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: stream,
-        builder: (context, snapshot) {
-          // Loading state
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(
-                    color: primaryColor,
-                    strokeWidth: 3,
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Searching for emergency blood requests...',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: textSecondaryColor,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // Error state
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
+      body: KeyedSubtree(
+        key: ValueKey(_streamKey),
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _getRequestsStream(),
+          builder: (context, snapshot) {
+            // 1. Loading State
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.error_outline_rounded,
-                      size: 48,
-                      color: Color(0xFFD32F2F),
+                    CircularProgressIndicator(
+                      color: EmergencyRequestsScreen.primaryColor,
+                      strokeWidth: 3,
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Failed to load emergency requests',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: 16),
                     Text(
-                      snapshot.error?.toString() ?? 'An error occurred.',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: textSecondaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          final allDocs = snapshot.data?.docs ?? [];
-
-          // Filter for active/open requests only
-          final activeDocs = allDocs.where((doc) {
-            final data = doc.data();
-            return _isActiveStatus(data['status']);
-          }).toList();
-
-          // Sort by createdAt descending
-          activeDocs.sort((a, b) {
-            final dateA = _parseDateTime(a.data()['createdAt']);
-            final dateB = _parseDateTime(b.data()['createdAt']);
-            return dateB.compareTo(dateA);
-          });
-
-          // Empty state
-          if (activeDocs.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: primaryColor.withValues(alpha: 0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_outline_rounded,
-                        size: 56,
-                        color: primaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'No Emergency Requests',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: textPrimaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'There are currently no active emergency blood requests. Check back later or ensure your availability status is turned on.',
-                      textAlign: TextAlign.center,
+                      'Loading emergency requests...',
                       style: TextStyle(
                         fontSize: 14,
-                        color: textSecondaryColor,
-                        height: 1.4,
+                        color: EmergencyRequestsScreen.textSecondaryColor,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
-              ),
-            );
-          }
+              );
+            }
 
-          // List of emergency request cards
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 18.0),
-            itemCount: activeDocs.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final doc = activeDocs[index];
-              final data = doc.data();
-              final requestId = doc.id;
-
-              final bloodGroup = (data['bloodGroup'] as String?)?.trim().isNotEmpty == true
-                  ? (data['bloodGroup'] as String).trim()
-                  : 'Not specified';
-
-              final hospitalName = (data['hospitalName'] as String?)?.trim().isNotEmpty == true
-                  ? (data['hospitalName'] as String).trim()
-                  : 'Unknown hospital';
-
-              final location = (data['location'] as String?)?.trim().isNotEmpty == true
-                  ? (data['location'] as String).trim()
-                  : 'Unknown location';
-
-              final urgencyConfig = _getUrgencyConfig(data['urgency']);
-
-              final rawUnits = data['requiredUnits'];
-              final unitsString = rawUnits != null
-                  ? '$rawUnits ${rawUnits == 1 ? 'Unit' : 'Units'} required'
-                  : 'Units: Not specified';
-
-              final statusRaw = (data['status'] as String?)?.trim();
-              final statusDisplay = (statusRaw != null && statusRaw.isNotEmpty)
-                  ? statusRaw[0].toUpperCase() + statusRaw.substring(1).toLowerCase()
-                  : 'Active';
-
-              return Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: cardBorderColor),
-                ),
-                color: Colors.white,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => _showRequestDetails(context, data, requestId),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Header: Blood Group Badge + Urgency Badge
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: primaryColor,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.water_drop_rounded,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    bloodGroup,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // Urgency badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: urgencyConfig.backgroundColor,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: urgencyConfig.borderColor),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    urgencyConfig.icon,
-                                    size: 14,
-                                    color: urgencyConfig.textColor,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    urgencyConfig.label,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: urgencyConfig.textColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+            // 2. Error State
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFFCA5A5)),
                         ),
-
-                        const SizedBox(height: 14),
-
-                        // Hospital Name
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.local_hospital_rounded,
-                              size: 18,
-                              color: primaryColor,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                hospitalName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: textPrimaryColor,
-                                ),
-                              ),
-                            ),
-                          ],
+                        child: const Icon(
+                          Icons.error_outline_rounded,
+                          size: 46,
+                          color: Color(0xFFDC2626),
                         ),
-
-                        const SizedBox(height: 6),
-
-                        // Location & Units info
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.location_on_outlined,
-                              size: 16,
-                              color: textSecondaryColor,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                location,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: textSecondaryColor,
-                                ),
-                              ),
-                            ),
-                          ],
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Unable to load emergency requests',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: EmergencyRequestsScreen.textPrimaryColor,
                         ),
-
-                        const SizedBox(height: 6),
-
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.medical_services_outlined,
-                              size: 16,
-                              color: textSecondaryColor,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              unitsString,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: textPrimaryColor,
-                              ),
-                            ),
-                          ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'We encountered an issue while connecting to the blood requests registry. Please check your internet connection and try again.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: EmergencyRequestsScreen.textSecondaryColor,
+                          height: 1.4,
                         ),
-
-                        const SizedBox(height: 12),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-
-                        // Footer: Status + View Details Tap Hint
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE8F5E9),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                statusDisplay,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF2E7D32),
-                                ),
-                              ),
-                            ),
-                            const Row(
-                              children: [
-                                Text(
-                                  'View Details',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: primaryColor,
-                                  ),
-                                ),
-                                SizedBox(width: 2),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 16,
-                                  color: primaryColor,
-                                ),
-                              ],
-                            ),
-                          ],
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: _retryLoading,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('Try Again'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: EmergencyRequestsScreen.primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               );
-            },
-          );
-        },
+            }
+
+            final allDocs = snapshot.data?.docs ?? [];
+
+            // 3. Filter for active/open/pending requests only
+            final activeDocs = allDocs.where((doc) {
+              final data = doc.data();
+              return EmergencyRequestsScreen.isActiveStatus(data['status']);
+            }).toList();
+
+            // 4. Sort by createdAt descending (newest first, nulls at the end)
+            activeDocs.sort((a, b) {
+              final dateA = EmergencyRequestsScreen.parseDateTime(a.data()['createdAt']);
+              final dateB = EmergencyRequestsScreen.parseDateTime(b.data()['createdAt']);
+
+              if (dateA == null && dateB == null) return 0;
+              if (dateA == null) return 1;
+              if (dateB == null) return -1;
+              return dateB.compareTo(dateA);
+            });
+
+            // 5. Empty State
+            if (activeDocs.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(22),
+                        decoration: BoxDecoration(
+                          color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.volunteer_activism_outlined,
+                          size: 56,
+                          color: EmergencyRequestsScreen.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'No Emergency Requests',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: EmergencyRequestsScreen.textPrimaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'There are currently no active blood requests. Please check again later.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: EmergencyRequestsScreen.textSecondaryColor,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // 6. Request List View
+            return ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+              itemCount: activeDocs.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final doc = activeDocs[index];
+                final data = doc.data();
+                final requestId = doc.id;
+
+                final rawBloodGroup = data['bloodGroup'] as String?;
+                final bloodGroup = (rawBloodGroup != null && rawBloodGroup.trim().isNotEmpty)
+                    ? rawBloodGroup.trim()
+                    : 'Not specified';
+
+                final rawHospital = data['hospitalName'] as String?;
+                final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
+                    ? rawHospital.trim()
+                    : 'Unknown hospital';
+
+                final rawLocation = data['location'] as String?;
+                final location = (rawLocation != null && rawLocation.trim().isNotEmpty)
+                    ? rawLocation.trim()
+                    : 'Unknown location';
+
+                final urgencyConfig = EmergencyRequestsScreen.getUrgencyConfig(data['urgency']);
+
+                final rawUnits = data['requiredUnits'];
+                final unitsString = rawUnits != null
+                    ? '$rawUnits ${rawUnits == 1 ? 'Unit' : 'Units'} required'
+                    : 'Units: Not specified';
+
+                final rawStatus = data['status'] as String?;
+                final statusDisplay = (rawStatus != null && rawStatus.trim().isNotEmpty)
+                    ? rawStatus.trim()[0].toUpperCase() + rawStatus.trim().substring(1).toLowerCase()
+                    : 'Active';
+
+                return Card(
+                  elevation: 0,
+                  margin: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: EmergencyRequestsScreen.cardBorderColor),
+                  ),
+                  color: Colors.white,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _showRequestDetails(context, data, requestId),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header: Blood Group Badge + Urgency Badge
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: EmergencyRequestsScreen.primaryColor,
+                                  borderRadius: BorderRadius.circular(10),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.25),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.water_drop_rounded,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      bloodGroup,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Urgency badge
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: urgencyConfig.backgroundColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: urgencyConfig.borderColor),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      urgencyConfig.icon,
+                                      size: 14,
+                                      color: urgencyConfig.textColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      urgencyConfig.label,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: urgencyConfig.textColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          // Hospital Name
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.local_hospital_rounded,
+                                size: 18,
+                                color: EmergencyRequestsScreen.primaryColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  hospitalName,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: EmergencyRequestsScreen.textPrimaryColor,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          // Location
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on_outlined,
+                                size: 16,
+                                color: EmergencyRequestsScreen.textSecondaryColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  location,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: EmergencyRequestsScreen.textSecondaryColor,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          // Required Units
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.medical_services_outlined,
+                                size: 16,
+                                color: EmergencyRequestsScreen.textSecondaryColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                unitsString,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: EmergencyRequestsScreen.textPrimaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 12),
+                          const Divider(
+                            height: 1,
+                            color: EmergencyRequestsScreen.cardBorderColor,
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Footer: Status Tag & View Details Indicator
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE8F5E9),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFC8E6C9)),
+                                ),
+                                child: Text(
+                                  statusDisplay,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF2E7D32),
+                                  ),
+                                ),
+                              ),
+                              const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'View Details',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: EmergencyRequestsScreen.primaryColor,
+                                    ),
+                                  ),
+                                  SizedBox(width: 2),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 16,
+                                    color: EmergencyRequestsScreen.primaryColor,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-/// Helper model holding UI colors and icon for an urgency level.
-class _UrgencyBadgeConfig {
+/// Visual style configuration for urgency levels.
+class UrgencyBadgeConfig {
   final String label;
   final Color textColor;
   final Color backgroundColor;
   final Color borderColor;
   final IconData icon;
 
-  const _UrgencyBadgeConfig({
+  const UrgencyBadgeConfig({
     required this.label,
     required this.textColor,
     required this.backgroundColor,
@@ -547,7 +621,7 @@ class _UrgencyBadgeConfig {
   });
 }
 
-/// Modal Bottom Sheet displaying in-depth information about a specific blood request.
+/// Modal Bottom Sheet displaying comprehensive information about a selected blood request.
 class _RequestDetailsBottomSheet extends StatelessWidget {
   final Map<String, dynamic> data;
   final String requestId;
@@ -557,23 +631,21 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
     required this.requestId,
   });
 
-  static const Color primaryColor = Color(0xFFC62828);
-  static const Color textPrimaryColor = Color(0xFF1F2937);
-  static const Color textSecondaryColor = Color(0xFF6B7280);
-  static const Color cardBorderColor = Color(0xFFE5E7EB);
-
   @override
   Widget build(BuildContext context) {
-    final bloodGroup = (data['bloodGroup'] as String?)?.trim().isNotEmpty == true
-        ? (data['bloodGroup'] as String).trim()
+    final rawBloodGroup = data['bloodGroup'] as String?;
+    final bloodGroup = (rawBloodGroup != null && rawBloodGroup.trim().isNotEmpty)
+        ? rawBloodGroup.trim()
         : 'Not specified';
 
-    final hospitalName = (data['hospitalName'] as String?)?.trim().isNotEmpty == true
-        ? (data['hospitalName'] as String).trim()
+    final rawHospital = data['hospitalName'] as String?;
+    final hospitalName = (rawHospital != null && rawHospital.trim().isNotEmpty)
+        ? rawHospital.trim()
         : 'Unknown hospital';
 
-    final location = (data['location'] as String?)?.trim().isNotEmpty == true
-        ? (data['location'] as String).trim()
+    final rawLocation = data['location'] as String?;
+    final location = (rawLocation != null && rawLocation.trim().isNotEmpty)
+        ? rawLocation.trim()
         : 'Unknown location';
 
     final rawUnits = data['requiredUnits'];
@@ -581,31 +653,34 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
         ? '$rawUnits ${rawUnits == 1 ? 'Unit' : 'Units'}'
         : 'Not specified';
 
-    final patientName = (data['patientName'] as String?)?.trim().isNotEmpty == true
-        ? (data['patientName'] as String).trim()
+    final rawPatient = data['patientName'] as String?;
+    final patientName = (rawPatient != null && rawPatient.trim().isNotEmpty)
+        ? rawPatient.trim()
         : 'Not specified';
 
-    final contactNumber = (data['contactNumber'] as String?)?.trim().isNotEmpty == true
-        ? (data['contactNumber'] as String).trim()
+    final rawContact = data['contactNumber'] as String?;
+    final contactNumber = (rawContact != null && rawContact.trim().isNotEmpty)
+        ? rawContact.trim()
         : 'Not specified';
 
-    final description = (data['description'] as String?)?.trim().isNotEmpty == true
-        ? (data['description'] as String).trim()
-        : 'No additional clinical description provided.';
+    final rawDescription = data['description'] as String?;
+    final description = (rawDescription != null && rawDescription.trim().isNotEmpty)
+        ? rawDescription.trim()
+        : 'No description available';
 
-    final rawStatus = (data['status'] as String?)?.trim();
-    final statusDisplay = (rawStatus != null && rawStatus.isNotEmpty)
-        ? rawStatus[0].toUpperCase() + rawStatus.substring(1).toLowerCase()
+    final rawStatus = data['status'] as String?;
+    final statusDisplay = (rawStatus != null && rawStatus.trim().isNotEmpty)
+        ? rawStatus.trim()[0].toUpperCase() + rawStatus.trim().substring(1).toLowerCase()
         : 'Active';
 
-    final urgencyConfig = EmergencyRequestsScreen._getUrgencyConfig(data['urgency']);
+    final urgencyConfig = EmergencyRequestsScreen.getUrgencyConfig(data['urgency']);
     final createdDateStr = EmergencyRequestsScreen.formatRequestDate(data['createdAt']);
 
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
       margin: const EdgeInsets.only(top: 48),
-      padding: EdgeInsets.fromLTRB(24, 20, 24, bottomInset + 24),
+      padding: EdgeInsets.fromLTRB(24, 16, 24, bottomInset + 24),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -617,7 +692,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Drag handle
+              // Modal Drag Handle
               Center(
                 child: Container(
                   width: 44,
@@ -630,7 +705,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
               ),
               const SizedBox(height: 16),
 
-              // Title and Close Button
+              // Title and Close Icon
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -639,11 +714,12 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: textPrimaryColor,
+                      color: EmergencyRequestsScreen.textPrimaryColor,
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
@@ -651,13 +727,15 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              // Blood Group & Urgency Banner Card
+              // Blood Group & Urgency Highlight Banner
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: primaryColor.withValues(alpha: 0.05),
+                  color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: primaryColor.withValues(alpha: 0.15)),
+                  border: Border.all(
+                    color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.15),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -665,8 +743,15 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        color: primaryColor,
+                        color: EmergencyRequestsScreen.primaryColor,
                         borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: EmergencyRequestsScreen.primaryColor.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
                       alignment: Alignment.center,
                       child: Text(
@@ -688,7 +773,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: textPrimaryColor,
+                              color: EmergencyRequestsScreen.textPrimaryColor,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -729,14 +814,14 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-              // Detail List Items
+              // Detail List Items Card
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFFF9FAFB),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: cardBorderColor),
+                  border: Border.all(color: EmergencyRequestsScreen.cardBorderColor),
                 ),
                 child: Column(
                   children: [
@@ -745,35 +830,55 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                       label: 'Location',
                       value: location,
                     ),
-                    const Divider(height: 1, indent: 48),
+                    const Divider(
+                      height: 1,
+                      indent: 48,
+                      color: EmergencyRequestsScreen.cardBorderColor,
+                    ),
                     _DetailRow(
                       icon: Icons.medical_services_outlined,
                       label: 'Required Units',
                       value: unitsString,
                     ),
-                    const Divider(height: 1, indent: 48),
+                    const Divider(
+                      height: 1,
+                      indent: 48,
+                      color: EmergencyRequestsScreen.cardBorderColor,
+                    ),
                     _DetailRow(
                       icon: Icons.person_outline_rounded,
                       label: 'Patient Name',
                       value: patientName,
                     ),
-                    const Divider(height: 1, indent: 48),
+                    const Divider(
+                      height: 1,
+                      indent: 48,
+                      color: EmergencyRequestsScreen.cardBorderColor,
+                    ),
                     _DetailRow(
                       icon: Icons.phone_outlined,
                       label: 'Contact Number',
                       value: contactNumber,
                     ),
-                    const Divider(height: 1, indent: 48),
+                    const Divider(
+                      height: 1,
+                      indent: 48,
+                      color: EmergencyRequestsScreen.cardBorderColor,
+                    ),
                     _DetailRow(
                       icon: Icons.timelapse_rounded,
-                      label: 'Status',
+                      label: 'Request Status',
                       value: statusDisplay,
                       valueColor: const Color(0xFF2E7D32),
                     ),
-                    const Divider(height: 1, indent: 48),
+                    const Divider(
+                      height: 1,
+                      indent: 48,
+                      color: EmergencyRequestsScreen.cardBorderColor,
+                    ),
                     _DetailRow(
                       icon: Icons.calendar_today_outlined,
-                      label: 'Created Date',
+                      label: 'Created Date & Time',
                       value: createdDateStr,
                     ),
                   ],
@@ -788,7 +893,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF9FAFB),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: cardBorderColor),
+                  border: Border.all(color: EmergencyRequestsScreen.cardBorderColor),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -798,7 +903,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                         Icon(
                           Icons.description_outlined,
                           size: 16,
-                          color: textSecondaryColor,
+                          color: EmergencyRequestsScreen.textSecondaryColor,
                         ),
                         SizedBox(width: 6),
                         Text(
@@ -806,7 +911,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: textSecondaryColor,
+                            color: EmergencyRequestsScreen.textSecondaryColor,
                           ),
                         ),
                       ],
@@ -816,7 +921,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
                       description,
                       style: const TextStyle(
                         fontSize: 14,
-                        color: textPrimaryColor,
+                        color: EmergencyRequestsScreen.textPrimaryColor,
                         height: 1.4,
                       ),
                     ),
@@ -826,16 +931,24 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Close button
+              // Close Details Button (strictly no respond/accept buttons in this step)
               OutlinedButton(
                 onPressed: () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: EmergencyRequestsScreen.cardBorderColor),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Close Details'),
+                child: const Text(
+                  'Close Details',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: EmergencyRequestsScreen.textPrimaryColor,
+                  ),
+                ),
               ),
             ],
           ),
@@ -845,7 +958,7 @@ class _RequestDetailsBottomSheet extends StatelessWidget {
   }
 }
 
-/// Helper tile for detailed attribute display inside request bottom sheet.
+/// Helper row for displaying key-value information in the details sheet.
 class _DetailRow extends StatelessWidget {
   final IconData icon;
   final String label;
