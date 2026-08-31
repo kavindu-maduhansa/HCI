@@ -124,7 +124,7 @@ class _HistoryTabState extends State<HistoryTab> {
         ],
       ),
     );
-    if (name == null || name.isEmpty) return;
+    if (name == null || name.isEmpty || !mounted) return;
     setState(() => _savedFilters = [
           ..._savedFilters,
           _SavedFilter(name: name, status: _statusFilter, priority: _priorityFilter, bloodGroup: _bloodGroupFilter),
@@ -145,7 +145,7 @@ class _HistoryTabState extends State<HistoryTab> {
       lastDate: now,
       initialDateRange: _dateRange,
     );
-    if (range != null) setState(() => _dateRange = range);
+    if (range != null && mounted) setState(() => _dateRange = range);
   }
 
   @override

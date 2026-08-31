@@ -113,7 +113,7 @@ class _VerifyRequestsTabState extends State<VerifyRequestsTab> {
         ],
       ),
     );
-    if (name == null || name.isEmpty) return;
+    if (name == null || name.isEmpty || !mounted) return;
     setState(() => _savedFilters = [
           ..._savedFilters,
           _SavedVerifyFilter(name: name, bloodGroup: _bloodGroupFilter, urgency: _urgencyFilter),
